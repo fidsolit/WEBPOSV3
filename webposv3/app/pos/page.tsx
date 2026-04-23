@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import Sidebar from "../components/sidebar";
 
 // --- Types ---
 interface Sale {
@@ -110,44 +111,7 @@ export default function POSDashboard() {
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       {/* Sidebar */}
-      <aside className="w-72 bg-white border-r border-slate-200 p-6 flex flex-col">
-        <div className="flex items-center gap-2 px-2 mb-10">
-          <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
-            P
-          </div>
-          <h1 className="text-xl font-bold tracking-tight">
-            POS<span className="text-blue-600">PRO</span>
-          </h1>
-        </div>
-
-        <nav className="space-y-1 flex-1">
-          <NavItem
-            icon={<LayoutDashboard size={20} />}
-            label="Dashboard"
-            active
-          />
-          <NavItem
-            icon={<ShoppingCart size={20} />}
-            label="New Sale"
-            onClick={() => setIsModalOpen(true)}
-          />
-          <Link href="/inventory">
-            <NavItem icon={<Package size={20} />} label="Inventory" />
-          </Link>
-          <NavItem icon={<Users size={20} />} label="Customers" />
-        </nav>
-
-        <div className="pt-6 border-t border-slate-100 space-y-2">
-          <NavItem icon={<Settings size={20} />} label="Settings" />
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 p-3 w-full rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-medium"
-          >
-            <LogOut size={20} />
-            <span className="text-[15px]">Logout</span>
-          </button>
-        </div>
-      </aside>
+      <Sidebar onNewSaleClick={() => setIsModalOpen(true)} />
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-10">
