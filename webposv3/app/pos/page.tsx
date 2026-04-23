@@ -18,6 +18,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import Link from "next/link";
 
 // --- Types ---
 interface Sale {
@@ -130,7 +131,9 @@ export default function POSDashboard() {
             label="New Sale"
             onClick={() => setIsModalOpen(true)}
           />
-          <NavItem icon={<Package size={20} />} label="Inventory" />
+          <Link href="/inventory">
+            <NavItem icon={<Package size={20} />} label="Inventory" />
+          </Link>
           <NavItem icon={<Users size={20} />} label="Customers" />
         </nav>
 
