@@ -1,106 +1,150 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, X, Loader2, Store } from "lucide-react";
 import Sidebar from "../components/sidebar";
 
 interface InventoryItem {
-  id: number | string;
-  name: string;
-  sku: string;
+  id: string;
   stock: number;
-  price: number;
-  status: string;
+  products: {
+    id: string;
+    name: string;
+    price: number;
+    barcode: string;
+  };
 }
-
-const initialData: InventoryItem[] = [
-  {
-    id: 1,
-    name: "Wireless Mouse",
-    sku: "WM-101",
-    stock: 45,
-    price: 25.0,
-    status: "In Stock",
-  },
-  {
-    id: 2,
-    name: "Mechanical Keyboard",
-    sku: "MK-202",
-    stock: 12,
-    price: 89.99,
-    status: "Low Stock",
-  },
-  {
-    id: 3,
-    name: "USB-C Hub",
-    sku: "UH-303",
-    stock: 0,
-    price: 45.5,
-    status: "Out of Stock",
-  },
-];
 
 export default function Inventory() {
   const router = useRouter();
-  const [items, setItems] = useState<InventoryItem[]>(initialData);
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [activeBranchName, setActiveBranchName] =
+    useState<string>("Loading branch...");
+
   const [newItem, setNewItem] = useState({
     name: "",
-    sku: "",
+    barcode: "",
     stock: "",
     price: "",
   });
 
+  const fetchInventory = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("inventory")
+      .select(
+        `
+      id, 
+      stock, 
+      products (
+        id, 
+        name, 
+        price, 
+        barcode
+      )
+    `,
+      )
+
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Supabase Error:", error.message);
+      return;
+    }
+
+    if (data) {
+      console.log("Inventory Data Received:", data);
+      setItems(data as any);
+    }
+  }, []);
+
   useEffect(() => {
-    const checkUser = async () => {
+    const init = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) router.push("/auth/login");
-      else setCheckingAuth(false);
-    };
-    checkUser();
-  }, [router]);
+      if (!session) {
+        router.push("/auth/login");
+        return;
+      }
+      setCheckingAuth(false);
 
-  const handleAddItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    const stockNum = parseInt(newItem.stock);
-    const product: InventoryItem = {
-      id: Date.now(),
-      name: newItem.name,
-      sku: newItem.sku,
-      stock: stockNum,
-      price: parseFloat(newItem.price),
-      status:
-        stockNum > 10
-          ? "In Stock"
-          : stockNum > 0
-            ? "Low Stock"
-            : "Out of Stock",
+      const { data: branches, error: branchError } = await supabase
+        .from("branches")
+        .select("id, name")
+        .limit(1);
+
+      if (branches && branches.length > 0) {
+        setActiveBranchId(branches[0].id);
+        setActiveBranchName(branches[0].name);
+      } else {
+        setActiveBranchName("No Branch Found");
+      }
+
+      fetchInventory();
     };
-    setItems([product, ...items]);
-    setNewItem({ name: "", sku: "", stock: "", price: "" });
-    setIsModalOpen(false);
+    init();
+  }, [router, fetchInventory]);
+
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBranchId) return alert("Error: No active branch found.");
+    setLoading(true);
+
+    try {
+      const { data: product, error: pError } = await supabase
+        .from("products")
+        .insert([
+          {
+            name: newItem.name,
+            barcode: newItem.barcode,
+            price: parseFloat(newItem.price),
+            cost: 0,
+          },
+        ])
+        .select()
+        .single();
+
+      if (pError) throw pError;
+
+      const { error: iError } = await supabase.from("inventory").insert([
+        {
+          product_id: product.id,
+          branch_id: activeBranchId,
+          stock: parseInt(newItem.stock),
+        },
+      ]);
+
+      if (iError) throw iError;
+
+      await fetchInventory();
+      setIsModalOpen(false);
+      setNewItem({ name: "", barcode: "", stock: "", price: "" });
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (checkingAuth)
     return (
-      <div className="h-screen flex items-center justify-center">
-        <Loader2 className="animate-spin text-blue-600" />
+      <div className="h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-blue-600 h-10 w-10" />
       </div>
     );
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      {/* 1. Sidebar stays on the left */}
-      <Sidebar onNewSaleClick={() => setIsModalOpen(true)} />
+      <Sidebar />
 
-      {/* 2. Main Content Wrapper */}
       <main className="flex-1 overflow-y-auto p-6 md:p-10">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
           <div>
             <button
               onClick={() => router.push("/pos")}
@@ -108,81 +152,71 @@ export default function Inventory() {
             >
               <ArrowLeft size={18} /> Back to Dashboard
             </button>
-            <h1 className="text-3xl font-bold text-gray-800">
-              Inventory Management
-            </h1>
-            <p className="text-gray-500">Track and manage your stock levels</p>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="bg-emerald-100 text-emerald-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                <Store size={10} /> {activeBranchName}
+              </span>
+            </div>
+            <h1 className="text-3xl font-bold">Inventory List</h1>
+            <p className="text-slate-500">
+              Managing stock for {activeBranchName}
+            </p>
           </div>
+
+          {/* This button should now trigger the modal below */}
           <button
             onClick={() => setIsModalOpen(true)}
-            className="w-full md:w-auto bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-105 transition-all shadow-xl shadow-blue-100"
+            className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-blue-100"
           >
-            <Plus size={20} /> Add New Product
+            <Plus size={20} /> Add Product
           </button>
-        </div>
+        </header>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <StatCard
-            label="Total Products"
-            value={items.length}
-            color="text-slate-900"
-          />
-          <StatCard
-            label="Low Stock"
-            value={items.filter((i) => i.status === "Low Stock").length}
-            color="text-orange-500"
-          />
-          <StatCard
-            label="Out of Stock"
-            value={items.filter((i) => i.status === "Out of Stock").length}
-            color="text-red-500"
-          />
-        </div>
-
-        {/* Inventory Table */}
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50/50 text-slate-400 uppercase text-xs font-semibold">
-                <tr>
-                  <th className="px-8 py-5">Product Name</th>
-                  <th className="px-8 py-5">SKU</th>
-                  <th className="px-8 py-5">Stock</th>
-                  <th className="px-8 py-5">Price</th>
-                  <th className="px-8 py-5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {items.map((item) => (
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50 text-slate-400 uppercase text-xs font-semibold">
+              <tr>
+                <th className="px-8 py-5">Product Name</th>
+                <th className="px-8 py-5">Barcode</th>
+                <th className="px-8 py-5">Current Stock</th>
+                <th className="px-8 py-5">Price</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {items.length > 0 ? (
+                items.map((item) => (
                   <tr
                     key={item.id}
                     className="hover:bg-slate-50/50 transition-colors"
                   >
-                    <td className="px-8 py-5 font-bold text-slate-800">
-                      {item.name}
+                    <td className="px-8 py-5 font-bold">
+                      {item.products?.name || "Unknown"}
                     </td>
                     <td className="px-8 py-5 text-slate-500 font-medium">
-                      {item.sku}
+                      {item.products?.barcode}
                     </td>
                     <td className="px-8 py-5 font-medium">{item.stock}</td>
-                    <td className="px-8 py-5 font-bold text-emerald-600">
-                      ₱{item.price.toFixed(2)}
-                    </td>
-                    <td className="px-8 py-5 text-right">
-                      <button className="text-blue-600 font-bold hover:underline">
-                        Edit
-                      </button>
+                    <td className="px-8 py-5 text-emerald-600 font-bold">
+                      ₱{item.products?.price?.toFixed(2)}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-8 py-10 text-center text-slate-400"
+                  >
+                    No products found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </main>
 
-      {/* --- MODAL --- */}
+      {/* --- MISSING MODAL CODE FIXED BELOW --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -195,14 +229,15 @@ export default function Inventory() {
                 <X size={20} />
               </button>
             </div>
+
             <form onSubmit={handleAddItem} className="space-y-4">
               <div>
-                <label className="text-sm font-bold text-slate-500">
+                <label className="text-sm font-bold text-slate-500 mb-1 block">
                   Product Name
                 </label>
                 <input
                   required
-                  type="text"
+                  placeholder="Enter name"
                   value={newItem.name}
                   onChange={(e) =>
                     setNewItem({ ...newItem, name: e.target.value })
@@ -210,23 +245,23 @@ export default function Inventory() {
                   className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
+              <div>
+                <label className="text-sm font-bold text-slate-500 mb-1 block">
+                  Barcode
+                </label>
+                <input
+                  required
+                  placeholder="Scan or type barcode"
+                  value={newItem.barcode}
+                  onChange={(e) =>
+                    setNewItem({ ...newItem, barcode: e.target.value })
+                  }
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-bold text-slate-500">
-                    SKU
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    value={newItem.sku}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, sku: e.target.value })
-                    }
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-bold text-slate-500">
+                  <label className="text-sm font-bold text-slate-500 mb-1 block">
                     Price (₱)
                   </label>
                   <input
@@ -240,49 +275,36 @@ export default function Inventory() {
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="text-sm font-bold text-slate-500">
-                  Initial Stock
-                </label>
-                <input
-                  required
-                  type="number"
-                  value={newItem.stock}
-                  onChange={(e) =>
-                    setNewItem({ ...newItem, stock: e.target.value })
-                  }
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
-                />
+                <div>
+                  <label className="text-sm font-bold text-slate-500 mb-1 block">
+                    Stock
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    value={newItem.stock}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, stock: e.target.value })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
               </div>
               <button
+                disabled={loading}
                 type="submit"
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100"
+                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition flex items-center justify-center"
               >
-                Create Product
+                {loading ? (
+                  <Loader2 className="animate-spin mr-2" size={20} />
+                ) : (
+                  "Save Product"
+                )}
               </button>
             </form>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Sub-component for clean code
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-      <p className="text-sm font-bold text-slate-400 mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${color}`}>{value}</p>
     </div>
   );
 }
