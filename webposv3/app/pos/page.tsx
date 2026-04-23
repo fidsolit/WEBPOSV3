@@ -3,22 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Users,
-  Settings,
-  Store,
-  MoreVertical,
-  LogOut,
-  ArrowUpRight,
-  ArrowDownRight,
-  Loader2,
-  Plus,
-  X,
-} from "lucide-react";
-import Link from "next/link";
+import { MoreVertical, Loader2, Plus, X } from "lucide-react";
 import Sidebar from "../components/sidebar";
 
 // --- Types ---
@@ -26,74 +11,113 @@ interface Sale {
   id: string;
   total: number;
   created_at: string;
-  payments?: { method: string }[];
 }
 
 export default function POSDashboard() {
   const router = useRouter();
 
-  // State
+  // --- States ---
   const [sales, setSales] = useState<Sale[]>([]);
   const [revenue, setRevenue] = useState(0);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
+
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false); // For New Sale
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --- Auth Check ---
+  // --- 1. Auth & Initial Data ---
   useEffect(() => {
-    const checkUser = async () => {
+    const init = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       if (!session) {
         router.push("/auth/login");
-      } else {
-        setCheckingAuth(false);
+        return;
       }
+
+      // Fetch a valid branch ID for new sales
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("id")
+        .limit(1)
+        .single();
+      if (branch) setActiveBranchId(branch.id);
+
+      setCheckingAuth(false);
     };
-    checkUser();
+    init();
   }, [router]);
 
-  // --- Data Fetching ---
+  // --- 2. Fetch All Dashboard Metrics ---
   const getDashboardData = useCallback(async () => {
     if (checkingAuth) return;
-
     setLoading(true);
-    const { data: salesData, error: salesError } = await supabase
-      .from("sales")
-      .select(`id, total, created_at, payments (method)`)
-      .order("created_at", { ascending: false })
-      .limit(5);
 
-    if (!salesError && salesData) {
-      setSales(salesData as unknown as Sale[]);
-      const total = salesData.reduce((acc, s) => acc + Number(s.total), 0);
-      setRevenue(total);
+    try {
+      // Fetch Total Products Count
+      const { count: pCount } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true });
+
+      // Fetch Total Users Count (from profiles table)
+      const { count: uCount } = await supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true });
+
+      // Fetch Low Stock Count (Items < 10)
+      const { count: lCount } = await supabase
+        .from("inventory")
+        .select("*", { count: "exact", head: true })
+        .lt("stock", 10);
+
+      // Fetch Sales for Revenue Calculation & Table
+      const { data: salesData } = await supabase
+        .from("sales")
+        .select("id, total, created_at")
+        .order("created_at", { ascending: false });
+
+      // Update States
+      if (pCount !== null) setTotalProducts(pCount);
+      if (uCount !== null) setTotalUsers(uCount);
+      if (lCount !== null) setLowStockCount(lCount);
+
+      if (salesData) {
+        setSales(salesData.slice(0, 5)); // Only show last 5 in table
+        const totalRev = salesData.reduce((acc, s) => acc + Number(s.total), 0);
+        setRevenue(totalRev);
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [checkingAuth]);
 
   useEffect(() => {
     getDashboardData();
   }, [getDashboardData]);
 
-  // --- Actions ---
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.refresh();
-    router.push("/auth/login");
-  };
-
+  // --- 3. Actions ---
   const handleAddNewSale = async (amount: number) => {
+    if (!activeBranchId)
+      return alert("Error: No branch associated with this sale.");
     setLoading(true);
-    const { error } = await supabase
-      .from("sales")
-      .insert([{ total: amount }]) // Minimal insert
-      .select();
+
+    const { error } = await supabase.from("sales").insert([
+      {
+        total: amount,
+        branch_id: activeBranchId,
+      },
+    ]);
 
     if (!error) {
       setIsModalOpen(false);
-      getDashboardData(); // Refresh list
+      getDashboardData();
     } else {
       alert(error.message);
     }
@@ -110,78 +134,95 @@ export default function POSDashboard() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Sidebar */}
       <Sidebar onNewSaleClick={() => setIsModalOpen(true)} />
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-10">
-        <header className="flex justify-between items-start mb-10">
+      <main className="flex-1 overflow-y-auto p-6 md:p-10">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
           <div>
             <h2 className="text-3xl font-bold">Dashboard Overview</h2>
             <p className="text-slate-500 mt-1">Real-time performance metrics</p>
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="px-6 py-3 rounded-2xl font-bold bg-blue-600 text-white shadow-xl shadow-blue-100 hover:scale-105 transition-all flex items-center gap-2"
+            className="w-full md:w-auto px-6 py-3 rounded-2xl font-bold bg-blue-600 text-white shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2"
           >
             <Plus size={20} /> New Sale
           </button>
         </header>
 
-        {/* Stats Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        {/* Stats Grid - 4 Columns */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
           <StatCard
             label="Total Revenue"
             value={`₱${revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`}
-            trend={+8.1}
           />
-          <StatCard label="Active Orders" value="14" trend={+2.4} />
-          <StatCard label="Low Stock Items" value="3" trend={-1.2} />
+          <StatCard label="Total Products" value={totalProducts.toString()} />
+          <StatCard label="Total Users" value={totalUsers.toString()} />
+          <StatCard
+            label="Low Stock Alert"
+            value={lowStockCount.toString()}
+            isAlert={lowStockCount > 0}
+          />
         </div>
 
-        {/* Transactions Table */}
-        <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
-          <h3 className="text-lg font-bold mb-6">Recent Transactions</h3>
-          <table className="w-full text-left">
-            <thead>
-              <tr className="text-slate-400 text-sm border-b border-slate-50">
-                <th className="pb-4 font-medium">ID</th>
-                <th className="pb-4 font-medium">Date</th>
-                <th className="pb-4 font-medium">Amount (PHP)</th>
-                <th className="pb-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sales.map((sale) => (
-                <tr
-                  key={sale.id}
-                  className="hover:bg-slate-50/50 transition-colors"
-                >
-                  <td className="py-4 text-sm font-medium">
-                    #{sale.id.slice(0, 8)}
-                  </td>
-                  <td className="py-4 text-sm text-slate-500">
-                    {new Date(sale.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="py-4 font-bold text-sm text-emerald-600">
-                    ₱{sale.total.toFixed(2)}
-                  </td>
-                  <td className="py-4 text-right">
-                    <MoreVertical
-                      size={16}
-                      className="ml-auto text-slate-400"
-                    />
-                  </td>
+        {/* Recent Transactions Table */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-8 border-b border-slate-50">
+            <h3 className="text-lg font-bold">Recent Transactions</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-slate-400 text-sm bg-slate-50/50">
+                  <th className="px-8 py-4 font-medium">Sale ID</th>
+                  <th className="px-8 py-4 font-medium">Date</th>
+                  <th className="px-8 py-4 font-medium">Total Amount</th>
+                  <th className="px-8 py-4 text-right font-medium">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {sales.length > 0 ? (
+                  sales.map((sale) => (
+                    <tr
+                      key={sale.id}
+                      className="hover:bg-slate-50/50 transition-colors"
+                    >
+                      <td className="px-8 py-4 text-sm font-medium">
+                        #{sale.id.slice(0, 8)}
+                      </td>
+                      <td className="px-8 py-4 text-sm text-slate-500">
+                        {new Date(sale.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-8 py-4 font-bold text-sm text-emerald-600">
+                        ₱{sale.total.toFixed(2)}
+                      </td>
+                      <td className="px-8 py-4 text-right">
+                        <MoreVertical
+                          size={16}
+                          className="ml-auto text-slate-400 cursor-pointer"
+                        />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-8 py-10 text-center text-slate-400"
+                    >
+                      No transactions yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </main>
 
       {/* --- NEW SALE MODAL --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Quick New Sale</h2>
@@ -197,23 +238,18 @@ export default function POSDashboard() {
               <p className="text-slate-500 text-sm">
                 Enter the total amount for this transaction.
               </p>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">
-                  ₱
-                </span>
-                <input
-                  autoFocus
-                  type="number"
-                  placeholder="0.00"
-                  className="w-full p-4 pl-8 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 text-2xl font-bold"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter")
-                      handleAddNewSale(
-                        Number((e.target as HTMLInputElement).value),
-                      );
-                  }}
-                />
-              </div>
+              <input
+                autoFocus
+                type="number"
+                placeholder="₱ 0.00"
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 text-2xl font-bold"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter")
+                    handleAddNewSale(
+                      Number((e.target as HTMLInputElement).value),
+                    );
+                }}
+              />
               <button
                 onClick={() => {
                   const val = (
@@ -223,7 +259,7 @@ export default function POSDashboard() {
                   ).value;
                   handleAddNewSale(Number(val));
                 }}
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg"
               >
                 Complete Sale
               </button>
@@ -235,62 +271,24 @@ export default function POSDashboard() {
   );
 }
 
-// --- Internal Components ---
-
-function NavItem({
-  icon,
-  label,
-  active = false,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ${
-        active
-          ? "bg-blue-600 text-white shadow-lg shadow-blue-100 font-bold"
-          : "text-slate-500 hover:bg-slate-50"
-      }`}
-    >
-      {icon}
-      <span className="text-[15px]">{label}</span>
-    </div>
-  );
-}
-
+// --- Helper Components ---
 function StatCard({
   label,
   value,
-  trend,
+  isAlert = false,
 }: {
   label: string;
   value: string;
-  trend: number;
+  isAlert?: boolean;
 }) {
-  const isPositive = trend >= 0;
   return (
-    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.02]">
-      <p className="text-slate-400 text-sm font-semibold mb-1 uppercase tracking-tight">
-        {label}
+    <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
+      <p className="text-slate-500 text-sm mb-1 font-medium">{label}</p>
+      <p
+        className={`text-2xl md:text-3xl font-bold ${isAlert ? "text-red-500" : "text-slate-900"}`}
+      >
+        {value}
       </p>
-      <div className="flex items-end justify-between">
-        <h4 className="text-3xl font-black">{value}</h4>
-        <div
-          className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg ${isPositive ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"}`}
-        >
-          {isPositive ? (
-            <ArrowUpRight size={14} />
-          ) : (
-            <ArrowDownRight size={14} />
-          )}
-          {Math.abs(trend)}%
-        </div>
-      </div>
     </div>
   );
 }
