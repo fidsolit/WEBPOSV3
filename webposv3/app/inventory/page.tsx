@@ -40,6 +40,25 @@ interface ProductOption {
   name: string;
 }
 
+interface RecentLossItem {
+  id: string;
+  quantity: number;
+  reason: string;
+  created_at: string;
+  item_name: string;
+  encoded_by: string;
+}
+
+interface InventoryLossRow {
+  id: string;
+  quantity: number;
+  reason: string;
+  created_at: string;
+  product_id: string | null;
+  variant_id: string | null;
+  created_by: string | null;
+}
+
 export default function Inventory() {
   const router = useRouter();
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -73,6 +92,7 @@ export default function Inventory() {
     quantity: "",
     reason: "",
   });
+  const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
 
   const fetchInventory = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
@@ -123,6 +143,91 @@ export default function Inventory() {
     setProductOptions((data as ProductOption[]) ?? []);
   }, []);
 
+  const loadRecentLosses = useCallback(async (branchId: string) => {
+    const { data, error } = await supabase
+      .from("inventory_losses")
+      .select("id, quantity, reason, created_at, product_id, variant_id, created_by")
+      .eq("branch_id", branchId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error("Failed loading recent losses:", error.message);
+      return;
+    }
+
+    const rows = (data as InventoryLossRow[]) ?? [];
+    const productIds = Array.from(
+      new Set(rows.map((row) => row.product_id).filter((id): id is string => Boolean(id))),
+    );
+    const variantIds = Array.from(
+      new Set(rows.map((row) => row.variant_id).filter((id): id is string => Boolean(id))),
+    );
+    const encodedByIds = Array.from(
+      new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id))),
+    );
+
+    let productNameMap = new Map<string, string>();
+    let variantNameMap = new Map<string, string>();
+    let encodedByMap = new Map<string, string | null>();
+
+    if (productIds.length > 0) {
+      const { data: productRows } = await supabase
+        .from("products")
+        .select("id, name")
+        .in("id", productIds);
+      productNameMap = new Map(
+        ((productRows ?? []) as { id: string; name: string }[]).map((row) => [
+          row.id,
+          row.name,
+        ]),
+      );
+    }
+
+    if (variantIds.length > 0) {
+      const { data: variantRows } = await supabase
+        .from("product_variants")
+        .select("id, name")
+        .in("id", variantIds);
+      variantNameMap = new Map(
+        ((variantRows ?? []) as { id: string; name: string }[]).map((row) => [
+          row.id,
+          row.name,
+        ]),
+      );
+    }
+
+    if (encodedByIds.length > 0) {
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", encodedByIds);
+      encodedByMap = new Map(
+        ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((row) => [
+          row.id,
+          row.full_name,
+        ]),
+      );
+    }
+
+    setRecentLosses(
+      rows.map((row) => ({
+        id: row.id,
+        quantity: row.quantity,
+        reason: row.reason,
+        created_at: row.created_at,
+        item_name: row.product_id
+          ? (productNameMap.get(row.product_id) ?? "Unknown product")
+          : row.variant_id
+            ? (variantNameMap.get(row.variant_id) ?? "Unknown variant")
+            : "Unknown item",
+        encoded_by: row.created_by
+          ? (encodedByMap.get(row.created_by) ?? "Unknown user")
+          : "System",
+      })),
+    );
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       const {
@@ -160,12 +265,13 @@ export default function Inventory() {
         setActiveBranchName(branches[0].name);
         fetchInventory(branches[0].id);
         loadProductOptions();
+        loadRecentLosses(branches[0].id);
       } else {
         setActiveBranchName("No Branch Found");
       }
     };
     init();
-  }, [router, fetchInventory, loadProductOptions]);
+  }, [router, fetchInventory, loadProductOptions, loadRecentLosses]);
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -353,6 +459,7 @@ export default function Inventory() {
     setLossForm({ productId: "", quantity: "", reason: "" });
     setLoading(false);
     await fetchInventory(activeBranchId);
+    await loadRecentLosses(activeBranchId);
   };
 
   if (checkingAuth)
@@ -463,6 +570,53 @@ export default function Inventory() {
             </tbody>
           </table>
         </div>
+
+        <section className="mt-8 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-100">
+            <h2 className="text-lg font-bold">Recent Loss Logs</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Latest inventory items logged as damaged, expired, or missing.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/50 text-slate-400 uppercase text-xs font-semibold">
+                <tr>
+                  <th className="px-8 py-4">Item</th>
+                  <th className="px-8 py-4">Quantity</th>
+                  <th className="px-8 py-4">Reason</th>
+                  <th className="px-8 py-4">Encoded By</th>
+                  <th className="px-8 py-4">Transaction Date & Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {recentLosses.length > 0 ? (
+                  recentLosses.map((loss) => (
+                    <tr key={loss.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-8 py-4 font-semibold">{loss.item_name}</td>
+                      <td className="px-8 py-4 text-rose-600 font-bold">
+                        -{loss.quantity}
+                      </td>
+                      <td className="px-8 py-4 text-slate-600">{loss.reason}</td>
+                      <td className="px-8 py-4 text-slate-600 font-medium">
+                        {loss.encoded_by}
+                      </td>
+                      <td className="px-8 py-4 text-slate-500">
+                        {new Date(loss.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-10 text-center text-slate-400">
+                      No recent loss logs found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </main>
 
       {/* --- MISSING MODAL CODE FIXED BELOW --- */}

@@ -72,9 +72,24 @@ export default function RegisterPage() {
       }
 
       if (data?.session) {
-        router.push("/pos");
+        await supabase
+          .from("profiles")
+          .update({ is_approved: false })
+          .eq("id", data.session.user.id)
+          .eq("role", "cashier");
+        await supabase.auth.signOut();
+        setError("Signup successful. Please wait for admin approval before logging in.");
       } else {
-        setError("Success! Please check your email for the confirmation link.");
+        if (data?.user?.id) {
+          await supabase
+            .from("profiles")
+            .update({ is_approved: false })
+            .eq("id", data.user.id)
+            .eq("role", "cashier");
+        }
+        setError(
+          "Success! Please check your email for confirmation, then wait for admin approval.",
+        );
       }
     } catch (err) {
       setError("An unexpected connection error occurred.");

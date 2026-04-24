@@ -17,6 +17,7 @@ interface CashierProfile {
   id: string;
   full_name: string | null;
   role: Role;
+  is_approved: boolean;
   branch_id: string | null;
   created_at: string;
 }
@@ -43,7 +44,7 @@ export default function CashiersPage() {
         supabase.from("branches").select("id, name").order("name", { ascending: true }),
         supabase
           .from("profiles")
-          .select("id, full_name, role, branch_id, created_at")
+          .select("id, full_name, role, is_approved, branch_id, created_at")
           .order("created_at", { ascending: false }),
       ]);
 
@@ -160,6 +161,22 @@ export default function CashiersPage() {
             icon={<UserCircle2 size={18} />}
           />
         </section>
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <StatTile
+            label="Approved Cashiers"
+            value={profiles
+              .filter((p) => p.role === "cashier" && p.is_approved)
+              .length.toString()}
+            icon={<Shield size={18} />}
+          />
+          <StatTile
+            label="Pending Approval"
+            value={profiles
+              .filter((p) => p.role === "cashier" && !p.is_approved)
+              .length.toString()}
+            icon={<UserCircle2 size={18} />}
+          />
+        </section>
 
         <section className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row gap-3 md:items-center">
@@ -190,6 +207,7 @@ export default function CashiersPage() {
                   <th className="px-6 py-4">Name</th>
                   <th className="px-6 py-4">User ID</th>
                   <th className="px-6 py-4">Role</th>
+                  <th className="px-6 py-4">Approval</th>
                   <th className="px-6 py-4">Branch</th>
                   <th className="px-6 py-4">Joined</th>
                 </tr>
@@ -197,7 +215,7 @@ export default function CashiersPage() {
               <tbody className="divide-y divide-slate-100">
                 {!loading && rows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-6 py-10 text-center text-slate-400">
+                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
                       No cashiers found.
                     </td>
                   </tr>
@@ -222,6 +240,27 @@ export default function CashiersPage() {
                         <option value="cashier">cashier</option>
                         <option value="admin">admin</option>
                       </select>
+                    </td>
+                    <td className="px-6 py-4">
+                      {profile.role === "cashier" ? (
+                        <button
+                          disabled={saving === profile.id}
+                          onClick={() =>
+                            updateProfile(profile.id, {
+                              is_approved: !profile.is_approved,
+                            })
+                          }
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg ${
+                            profile.is_approved
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {profile.is_approved ? "Approved" : "Approve"}
+                        </button>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-400">N/A</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <select

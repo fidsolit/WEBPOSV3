@@ -73,14 +73,21 @@ export async function middleware(request: NextRequest) {
   if (user && isProtectedRoute) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, is_approved")
       .eq("id", user.id)
       .single();
 
     const role = profile?.role;
+    const isApproved = profile?.is_approved !== false;
     const isAdminRoute = adminOnlyPrefixes.some((prefix) =>
       pathname.startsWith(prefix),
     );
+
+    if (role === "cashier" && !isApproved) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      return NextResponse.redirect(url);
+    }
 
     if (isAdminRoute && role !== "admin") {
       const url = request.nextUrl.clone();

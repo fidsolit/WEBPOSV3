@@ -15,7 +15,7 @@ interface Sale {
   receipt_no: string | null;
   status: "saved" | "completed" | "void";
   user_id: string | null;
-  profiles:
+  profiles?:
     | {
         full_name: string | null;
       }
@@ -121,9 +121,15 @@ export default function POSDashboard() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, is_approved")
         .eq("id", session.user.id)
         .single();
+      if (profile?.role === "cashier" && profile?.is_approved === false) {
+        await supabase.auth.signOut();
+        alert("Your cashier account is pending admin approval.");
+        router.push("/auth/login");
+        return;
+      }
       if (profile?.role === "admin" || profile?.role === "cashier") {
         setUserRole(profile.role);
       }
@@ -181,10 +187,15 @@ export default function POSDashboard() {
         .limit(8);
 
       // Fetch Sales for Revenue Calculation & Table
-      const { data: salesData } = await supabase
+      const { data: salesData, error: salesError } = await supabase
         .from("sales")
-        .select("id, total, created_at, receipt_no, status, user_id, profiles(full_name)")
+        .select("id, total, created_at, receipt_no, status, user_id")
+        .limit(25)
         .order("created_at", { ascending: false });
+
+      if (salesError) {
+        console.error("Failed to fetch sales:", salesError.message);
+      }
 
       // Update States
       if (pCount !== null) setTotalProducts(pCount);
@@ -213,6 +224,29 @@ export default function POSDashboard() {
       }
 
       if (salesData) {
+        const rows = salesData as Omit<Sale, "unit_cost_total" | "profiles">[];
+        const uniqueUserIds = Array.from(
+          new Set(rows.map((sale) => sale.user_id).filter((id): id is string => Boolean(id))),
+        );
+        let profileNameMap = new Map<string, string | null>();
+
+        if (uniqueUserIds.length > 0) {
+          const { data: profileRows, error: profileError } = await supabase
+            .from("profiles")
+            .select("id, full_name")
+            .in("id", uniqueUserIds);
+          if (profileError) {
+            console.error("Failed to fetch profile names:", profileError.message);
+          } else {
+            profileNameMap = new Map(
+              ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((p) => [
+                p.id,
+                p.full_name,
+              ]),
+            );
+          }
+        }
+
         const recentSales = salesData.slice(0, 5);
         const recentSaleIds = recentSales.map((sale) => sale.id);
         let saleCostMap = new Map<string, number>();
@@ -236,6 +270,9 @@ export default function POSDashboard() {
           recentSales.map((sale) => ({
             ...sale,
             unit_cost_total: saleCostMap.get(sale.id) ?? 0,
+            profiles: sale.user_id
+              ? { full_name: profileNameMap.get(sale.user_id) ?? null }
+              : null,
           })),
         );
         const completedSales = salesData.filter((s) => s.status === "completed");
@@ -254,6 +291,8 @@ export default function POSDashboard() {
           todayCompleted.reduce((acc, s) => acc + Number(s.total), 0),
         );
         setTodaySalesCount(todayCompleted.length);
+      } else {
+        setSales([]);
       }
 
       const { data: creditData, error: creditError } = await supabase
@@ -660,6 +699,9 @@ export default function POSDashboard() {
         <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-8 border-b border-slate-50">
             <h3 className="text-lg font-bold">Recent Transactions</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Latest sales recorded in your POS, including unit cost per transaction.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -669,7 +711,6 @@ export default function POSDashboard() {
                   <th className="px-8 py-4 font-medium">Receipt</th>
                   <th className="px-8 py-4 font-medium">Cashier</th>
                   <th className="px-8 py-4 font-medium">Date</th>
-                  <th className="px-8 py-4 font-medium">Unit Cost</th>
                   <th className="px-8 py-4 font-medium">Total Amount</th>
                   <th className="px-8 py-4 font-medium">Status</th>
                   <th className="px-8 py-4 text-right font-medium">Action</th>
@@ -696,9 +737,6 @@ export default function POSDashboard() {
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
                         {new Date(sale.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-8 py-4 font-semibold text-amber-600 text-sm">
-                        ₱{sale.unit_cost_total.toFixed(2)}
                       </td>
                       <td className="px-8 py-4 font-bold text-sm text-emerald-600">
                         ₱{sale.total.toFixed(2)}
@@ -736,7 +774,7 @@ export default function POSDashboard() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={7}
                       className="px-8 py-10 text-center text-slate-400"
                     >
                       No transactions yet.

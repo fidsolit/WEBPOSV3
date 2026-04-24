@@ -40,12 +40,24 @@ interface TopSellingItem {
   salesAmount: number;
 }
 
+interface RecentReportTransaction {
+  id: string;
+  receiptNo: string;
+  createdAt: string;
+  total: number;
+  unitCostTotal: number;
+  profit: number;
+}
+
 export default function ReportsPage() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<ProfitMetric[]>([]);
   const [topSellingItems, setTopSellingItems] = useState<TopSellingItem[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<
+    RecentReportTransaction[]
+  >([]);
   const [viewMode, setViewMode] = useState<"cards" | "graph">("cards");
 
   useEffect(() => {
@@ -172,6 +184,25 @@ export default function ReportsPage() {
       } else {
         setTopSellingItems([]);
       }
+
+      const latest = [...sales]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )
+        .slice(0, 8)
+        .map((sale) => {
+          const unitCostTotal = cogsBySale.get(sale.id) ?? 0;
+          return {
+            id: sale.id,
+            receiptNo: sale.id.slice(0, 8),
+            createdAt: sale.created_at,
+            total: Number(sale.total || 0),
+            unitCostTotal,
+            profit: Number(sale.total || 0) - unitCostTotal,
+          };
+        });
+      setRecentTransactions(latest);
 
       const computeMetric = (label: string, from: Date): ProfitMetric => {
         const scoped = sales.filter((sale) => new Date(sale.created_at) >= from);
@@ -340,6 +371,64 @@ export default function ReportsPage() {
               ) : (
                 <p className="text-sm text-slate-400">No sales data yet for top items.</p>
               )}
+            </section>
+
+            <section className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-slate-100">
+                <h2 className="text-lg font-bold">Recent Transactions</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Latest completed sales with unit cost and profit.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-slate-400 text-xs uppercase bg-slate-50/70">
+                      <th className="px-6 py-3 font-semibold">Receipt</th>
+                      <th className="px-6 py-3 font-semibold">Date</th>
+                      <th className="px-6 py-3 font-semibold">Unit Cost</th>
+                      <th className="px-6 py-3 font-semibold">Total</th>
+                      <th className="px-6 py-3 font-semibold">Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentTransactions.length > 0 ? (
+                      recentTransactions.map((tx) => (
+                        <tr key={tx.id} className="hover:bg-slate-50/60">
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                            {tx.receiptNo}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-500">
+                            {new Date(tx.createdAt).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-amber-600">
+                            {currency.format(tx.unitCostTotal)}
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-800">
+                            {currency.format(tx.total)}
+                          </td>
+                          <td
+                            className={`px-6 py-4 text-sm font-bold ${
+                              tx.profit >= 0 ? "text-emerald-600" : "text-rose-600"
+                            }`}
+                          >
+                            {currency.format(tx.profit)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-6 py-8 text-sm text-center text-slate-400"
+                        >
+                          No recent completed transactions yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
             {viewMode === "cards" ? (
