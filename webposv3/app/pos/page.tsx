@@ -10,6 +10,7 @@ import Sidebar from "../components/sidebar";
 interface Sale {
   id: string;
   total: number;
+  unit_cost_total: number;
   created_at: string;
   receipt_no: string | null;
   status: "saved" | "completed" | "void";
@@ -52,6 +53,12 @@ interface InventoryForSale {
   id: string;
   product_id: string;
   stock: number;
+}
+
+interface SaleItemCostRow {
+  sale_id: string;
+  quantity: number;
+  unit_cost: number | null;
 }
 
 interface LowStockItem {
@@ -206,7 +213,31 @@ export default function POSDashboard() {
       }
 
       if (salesData) {
-        setSales(salesData.slice(0, 5)); // Only show last 5 in table
+        const recentSales = salesData.slice(0, 5);
+        const recentSaleIds = recentSales.map((sale) => sale.id);
+        let saleCostMap = new Map<string, number>();
+
+        if (recentSaleIds.length > 0) {
+          const { data: saleItemsCostData } = await supabase
+            .from("sale_items")
+            .select("sale_id, quantity, unit_cost")
+            .in("sale_id", recentSaleIds);
+
+          const saleItemsRows = (saleItemsCostData as SaleItemCostRow[]) ?? [];
+          saleCostMap = saleItemsRows.reduce((acc, row) => {
+            const lineCost = Number(row.unit_cost ?? 0) * Number(row.quantity ?? 0);
+            const current = acc.get(row.sale_id) ?? 0;
+            acc.set(row.sale_id, current + lineCost);
+            return acc;
+          }, new Map<string, number>());
+        }
+
+        setSales(
+          recentSales.map((sale) => ({
+            ...sale,
+            unit_cost_total: saleCostMap.get(sale.id) ?? 0,
+          })),
+        );
         const completedSales = salesData.filter((s) => s.status === "completed");
         const totalRev = completedSales.reduce(
           (acc, s) => acc + Number(s.total),
@@ -487,7 +518,7 @@ export default function POSDashboard() {
     setCart([]);
     setItemSearch("");
     setBarcodeInput("");
-    getDashboardData();
+    await getDashboardData();
     setSubmittingSale(false);
   };
   const filteredCatalogItems = catalogItems.filter((item) => {
@@ -545,7 +576,7 @@ export default function POSDashboard() {
     setCreditNote("");
     setPromiseToPayDate("");
     setSubmittingCredit(false);
-    getDashboardData();
+    await getDashboardData();
   };
 
   const handleVoidSale = async (saleId: string) => {
@@ -566,7 +597,7 @@ export default function POSDashboard() {
       alert(error.message);
       return;
     }
-    getDashboardData();
+    await getDashboardData();
   };
 
   if (checkingAuth) {
@@ -638,6 +669,7 @@ export default function POSDashboard() {
                   <th className="px-8 py-4 font-medium">Receipt</th>
                   <th className="px-8 py-4 font-medium">Cashier</th>
                   <th className="px-8 py-4 font-medium">Date</th>
+                  <th className="px-8 py-4 font-medium">Unit Cost</th>
                   <th className="px-8 py-4 font-medium">Total Amount</th>
                   <th className="px-8 py-4 font-medium">Status</th>
                   <th className="px-8 py-4 text-right font-medium">Action</th>
@@ -664,6 +696,9 @@ export default function POSDashboard() {
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
                         {new Date(sale.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-8 py-4 font-semibold text-amber-600 text-sm">
+                        ₱{sale.unit_cost_total.toFixed(2)}
                       </td>
                       <td className="px-8 py-4 font-bold text-sm text-emerald-600">
                         ₱{sale.total.toFixed(2)}
@@ -701,7 +736,7 @@ export default function POSDashboard() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-8 py-10 text-center text-slate-400"
                     >
                       No transactions yet.
