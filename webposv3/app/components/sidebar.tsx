@@ -11,6 +11,7 @@ import {
   Package,
   Users,
   UserCog,
+  ChartColumn,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -94,6 +95,12 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
               icon={<UserCog size={20} />}
               label="Cashiers"
               active={pathname === "/cashiers"}
+            />
+            <SidebarItem
+              href="/reports"
+              icon={<ChartColumn size={20} />}
+              label="Reports"
+              active={pathname === "/reports"}
             />
           </>
         )}

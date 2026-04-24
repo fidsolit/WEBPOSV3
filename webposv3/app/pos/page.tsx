@@ -40,6 +40,7 @@ interface ProductCatalogItem {
   id: string;
   name: string;
   price: number;
+  cost: number;
   barcode: string | null;
 }
 
@@ -276,6 +277,7 @@ export default function POSDashboard() {
           id,
           name,
           price,
+          cost,
           barcode
         )
       `,
@@ -292,8 +294,20 @@ export default function POSDashboard() {
     const rows = (data ?? []) as {
       stock: number;
       products:
-        | { id: string; name: string; price: number; barcode: string | null }
-        | { id: string; name: string; price: number; barcode: string | null }[]
+        | {
+            id: string;
+            name: string;
+            price: number;
+            cost: number;
+            barcode: string | null;
+          }
+        | {
+            id: string;
+            name: string;
+            price: number;
+            cost: number;
+            barcode: string | null;
+          }[]
         | null;
     }[];
 
@@ -422,6 +436,7 @@ export default function POSDashboard() {
       price: item.price,
       line_subtotal: Number(item.price) * item.quantity,
       net_line_total: Number(item.price) * item.quantity,
+      unit_cost: Number(item.cost) || 0,
     }));
 
     const { error: saleItemsError } = await supabase

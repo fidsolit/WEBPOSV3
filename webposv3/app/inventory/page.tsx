@@ -14,6 +14,7 @@ interface InventoryItem {
         id: string;
         name: string;
         price: number;
+        cost: number;
         barcode: string | null;
       }
     | null;
@@ -23,6 +24,7 @@ interface InventoryProduct {
   id: string;
   name: string;
   price: number;
+  cost: number;
   barcode: string | null;
 }
 
@@ -56,6 +58,7 @@ export default function Inventory() {
     barcode: "",
     stock: "",
     price: "",
+    cost: "",
   });
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [variantForm, setVariantForm] = useState({
@@ -84,6 +87,7 @@ export default function Inventory() {
         id, 
         name, 
         price, 
+        cost,
         barcode
       )
     `,
@@ -167,12 +171,16 @@ export default function Inventory() {
     e.preventDefault();
     if (!activeBranchId) return alert("Error: No active branch found.");
     const parsedPrice = Number.parseFloat(newItem.price);
+    const parsedCost = Number.parseFloat(newItem.cost);
     const parsedStock = Number.parseInt(newItem.stock, 10);
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
       return alert("Please enter a valid price.");
     }
     if (!Number.isFinite(parsedStock) || parsedStock < 0) {
       return alert("Please enter a valid stock.");
+    }
+    if (!Number.isFinite(parsedCost) || parsedCost < 0) {
+      return alert("Please enter a valid unit cost.");
     }
     setLoading(true);
 
@@ -184,7 +192,7 @@ export default function Inventory() {
             name: newItem.name,
             barcode: newItem.barcode || null,
             price: parsedPrice,
-            cost: 0,
+            cost: parsedCost,
           },
         ])
         .select()
@@ -204,7 +212,7 @@ export default function Inventory() {
 
       await fetchInventory(activeBranchId);
       setIsModalOpen(false);
-      setNewItem({ name: "", barcode: "", stock: "", price: "" });
+      setNewItem({ name: "", barcode: "", stock: "", price: "", cost: "" });
     } catch (err: any) {
       if (err?.code === "23505") {
         alert("Barcode already exists. Please use a unique barcode.");
@@ -406,6 +414,7 @@ export default function Inventory() {
                 <th className="px-8 py-5">Product Name</th>
                 <th className="px-8 py-5">Barcode</th>
                 <th className="px-8 py-5">Current Stock</th>
+                <th className="px-8 py-5">Unit Cost</th>
                 <th className="px-8 py-5">Price</th>
               </tr>
             </thead>
@@ -433,6 +442,9 @@ export default function Inventory() {
                         {item.stock}
                       </span>
                     </td>
+                    <td className="px-8 py-5 text-amber-600 font-bold">
+                      ₱{item.products?.cost?.toFixed(2)}
+                    </td>
                     <td className="px-8 py-5 text-emerald-600 font-bold">
                       ₱{item.products?.price?.toFixed(2)}
                     </td>
@@ -441,7 +453,7 @@ export default function Inventory() {
               ) : (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-8 py-10 text-center text-slate-400"
                   >
                     No products found.
@@ -496,7 +508,22 @@ export default function Inventory() {
                   className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm font-bold text-slate-500 mb-1 block">
+                    Unit Cost (₱)
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    value={newItem.cost}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, cost: e.target.value })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
                 <div>
                   <label className="text-sm font-bold text-slate-500 mb-1 block">
                     Price (₱)
