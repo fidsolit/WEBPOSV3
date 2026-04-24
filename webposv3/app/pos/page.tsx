@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { MoreVertical, Loader2, Plus, X } from "lucide-react";
+import { MoreVertical, Loader2, Plus, Search, X } from "lucide-react";
 import Sidebar from "../components/sidebar";
 
 // --- Types ---
@@ -21,6 +21,17 @@ interface CustomerCredit {
   amount: number;
   note: string | null;
   created_at: string;
+}
+
+interface ProductCatalogItem {
+  id: string;
+  name: string;
+  price: number;
+  barcode: string | null;
+}
+
+interface CartItem extends ProductCatalogItem {
+  quantity: number;
 }
 
 export default function POSDashboard() {
@@ -41,8 +52,11 @@ export default function POSDashboard() {
   const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [quickSaleAmount, setQuickSaleAmount] = useState("");
   const [submittingSale, setSubmittingSale] = useState(false);
+  const [catalogItems, setCatalogItems] = useState<ProductCatalogItem[]>([]);
+  const [itemSearch, setItemSearch] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [creditAmount, setCreditAmount] = useState("");
@@ -167,34 +181,169 @@ export default function POSDashboard() {
   }, [getDashboardData]);
 
   // --- 3. Actions ---
-  const handleAddNewSale = async () => {
-    if (!activeBranchId)
-      return alert("Error: No branch associated with this sale.");
-    const amount = Number(quickSaleAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return alert("Please enter a valid amount greater than 0.");
+  const loadCatalogItems = useCallback(async () => {
+    if (!activeBranchId) return;
+    const { data, error } = await supabase
+      .from("inventory")
+      .select(
+        `
+        stock,
+        products (
+          id,
+          name,
+          price,
+          barcode
+        )
+      `,
+      )
+      .eq("branch_id", activeBranchId)
+      .gt("stock", 0)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed loading catalog:", error.message);
+      return;
     }
+
+    const rows = (data ?? []) as {
+      stock: number;
+      products:
+        | { id: string; name: string; price: number; barcode: string | null }
+        | { id: string; name: string; price: number; barcode: string | null }[]
+        | null;
+    }[];
+
+    const items = rows
+      .map((row) => (Array.isArray(row.products) ? row.products[0] : row.products))
+      .filter((p): p is ProductCatalogItem => Boolean(p));
+    setCatalogItems(items);
+  }, [activeBranchId]);
+
+  useEffect(() => {
+    if (isModalOpen) loadCatalogItems();
+  }, [isModalOpen, loadCatalogItems]);
+
+  const addItemToCart = (item: ProductCatalogItem) => {
+    setCart((current) => {
+      const existing = current.find((c) => c.id === item.id);
+      if (existing) {
+        return current.map((c) =>
+          c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c,
+        );
+      }
+      return [...current, { ...item, quantity: 1 }];
+    });
+  };
+
+  const handleBarcodeAdd = () => {
+    const code = barcodeInput.trim();
+    if (!code) return;
+    const matched = catalogItems.find((item) => item.barcode === code);
+    if (!matched) {
+      alert("Barcode not found in available items.");
+      return;
+    }
+    addItemToCart(matched);
+    setBarcodeInput("");
+  };
+
+  const handleQuantityChange = (productId: string, quantity: number) => {
+    if (quantity <= 0) {
+      setCart((current) => current.filter((c) => c.id !== productId));
+      return;
+    }
+    setCart((current) =>
+      current.map((c) => (c.id === productId ? { ...c, quantity } : c)),
+    );
+  };
+
+  const cartSubtotal = cart.reduce(
+    (sum, item) => sum + Number(item.price) * item.quantity,
+    0,
+  );
+
+  const handleAddNewSale = async () => {
+    if (!activeBranchId || !currentUserId) {
+      return alert("Missing branch or user context.");
+    }
+    if (cart.length === 0) {
+      return alert("Add at least one item to cart.");
+    }
+
     setSubmittingSale(true);
 
-    const { error } = await supabase.from("sales").insert([
+    const receiptNo = `RCPT-${Date.now()}`;
+    const { data: saleData, error } = await supabase
+      .from("sales")
+      .insert([
+        {
+          total: cartSubtotal,
+          subtotal: cartSubtotal,
+          net_total: cartSubtotal,
+          status: "completed",
+          receipt_no: receiptNo,
+          branch_id: activeBranchId,
+          user_id: currentUserId,
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (error || !saleData) {
+      alert(error?.message || "Failed creating sale.");
+      setSubmittingSale(false);
+      return;
+    }
+
+    const saleItemsPayload = cart.map((item) => ({
+      sale_id: saleData.id,
+      product_id: item.id,
+      quantity: item.quantity,
+      price: item.price,
+      line_subtotal: Number(item.price) * item.quantity,
+      net_line_total: Number(item.price) * item.quantity,
+    }));
+
+    const { error: saleItemsError } = await supabase
+      .from("sale_items")
+      .insert(saleItemsPayload);
+
+    if (saleItemsError) {
+      alert(saleItemsError.message);
+      setSubmittingSale(false);
+      return;
+    }
+
+    const { error: paymentError } = await supabase.from("payments").insert([
       {
-        total: amount,
-        subtotal: amount,
-        net_total: amount,
-        status: "completed",
-        branch_id: activeBranchId,
+        sale_id: saleData.id,
+        method: "cash",
+        amount: cartSubtotal,
       },
     ]);
 
-    if (!error) {
-      setIsModalOpen(false);
-      setQuickSaleAmount("");
-      getDashboardData();
-    } else {
-      alert(error.message);
+    if (paymentError) {
+      alert(paymentError.message);
+      setSubmittingSale(false);
+      return;
     }
+
+    setIsModalOpen(false);
+    setCart([]);
+    setItemSearch("");
+    setBarcodeInput("");
+    getDashboardData();
     setSubmittingSale(false);
   };
+  const filteredCatalogItems = catalogItems.filter((item) => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.barcode?.toLowerCase().includes(q)
+    );
+  });
+
 
   const handleAddCustomerCredit = async () => {
     if (!activeBranchId || !currentUserId) {
@@ -449,9 +598,9 @@ export default function POSDashboard() {
       {/* --- NEW SALE MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-5xl shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Quick New Sale</h2>
+              <h2 className="text-xl font-bold">New Sale</h2>
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="p-2 hover:bg-slate-100 rounded-full"
@@ -460,30 +609,121 @@ export default function POSDashboard() {
               </button>
             </div>
 
-            <div className="space-y-4">
-              <p className="text-slate-500 text-sm">
-                Enter the total amount for this transaction.
-              </p>
-              <input
-                autoFocus
-                type="number"
-                placeholder="₱ 0.00"
-                min="0.01"
-                step="0.01"
-                value={quickSaleAmount}
-                onChange={(e) => setQuickSaleAmount(e.target.value)}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 text-2xl font-bold"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddNewSale();
-                }}
-              />
-              <button
-                disabled={submittingSale}
-                onClick={handleAddNewSale}
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg"
-              >
-                {submittingSale ? "Processing..." : "Complete Sale"}
-              </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    autoFocus
+                    value={itemSearch}
+                    onChange={(e) => setItemSearch(e.target.value)}
+                    placeholder="Search item name or barcode"
+                    className="w-full p-3 pl-9 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+                <input
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  placeholder="Scan barcode then press Enter"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleBarcodeAdd();
+                    }
+                  }}
+                />
+                <div className="max-h-80 overflow-y-auto border border-slate-100 rounded-xl">
+                  {filteredCatalogItems.length > 0 ? (
+                    filteredCatalogItems.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => addItemToCart(item)}
+                        className="w-full text-left px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
+                      >
+                        <p className="font-semibold">{item.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {item.barcode || "No barcode"} - ₱
+                          {Number(item.price).toFixed(2)}
+                        </p>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="p-4 text-sm text-slate-400">
+                      No matching products.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                <h3 className="font-bold mb-3">Cart</h3>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {cart.length > 0 ? (
+                    cart.map((item) => (
+                      <div
+                        key={item.id}
+                        className="bg-white rounded-lg p-3 border border-slate-100"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="font-medium text-sm">{item.name}</p>
+                          <p className="text-sm font-bold">
+                            ₱{(Number(item.price) * item.quantity).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-slate-500">
+                            ₱{Number(item.price).toFixed(2)} each
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                handleQuantityChange(item.id, item.quantity - 1)
+                              }
+                              className="h-7 w-7 rounded bg-slate-100"
+                            >
+                              -
+                            </button>
+                            <span className="text-sm w-6 text-center">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleQuantityChange(item.id, item.quantity + 1)
+                              }
+                              className="h-7 w-7 rounded bg-slate-100"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400">Cart is empty.</p>
+                  )}
+                </div>
+                <div className="border-t border-slate-200 mt-4 pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Subtotal</span>
+                    <span>₱{cartSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Total</span>
+                    <span>₱{cartSubtotal.toFixed(2)}</span>
+                  </div>
+                  <button
+                    disabled={submittingSale || cart.length === 0}
+                    onClick={handleAddNewSale}
+                    className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                  >
+                    {submittingSale ? "Processing..." : "Complete Sale"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
