@@ -52,7 +52,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const adminOnlyPrefixes = ["/inventory", "/cashiers", "/settings", "/customers"];
+  const adminOnlyPrefixes = ["/inventory", "/cashiers", "/settings"];
   const isProtectedRoute =
     pathname.startsWith("/pos") ||
     adminOnlyPrefixes.some((prefix) => pathname.startsWith(prefix));

@@ -13,13 +13,26 @@ interface Sale {
   created_at: string;
   receipt_no: string | null;
   status: "saved" | "completed" | "void";
+  user_id: string | null;
+  profiles:
+    | {
+        full_name: string | null;
+      }
+    | {
+        full_name: string | null;
+      }[]
+    | null;
 }
 
 interface CustomerCredit {
   id: string;
   customer_name: string;
+  contact_number: string | null;
   amount: number;
   note: string | null;
+  promise_to_pay_date: string | null;
+  is_paid: boolean;
+  payment_status: "pending" | "paid" | "overdue";
   created_at: string;
 }
 
@@ -32,6 +45,22 @@ interface ProductCatalogItem {
 
 interface CartItem extends ProductCatalogItem {
   quantity: number;
+}
+
+interface InventoryForSale {
+  id: string;
+  product_id: string;
+  stock: number;
+}
+
+interface LowStockItem {
+  id: string;
+  stock: number;
+  min_stock: number;
+  products: {
+    name: string;
+    barcode: string | null;
+  } | null;
 }
 
 export default function POSDashboard() {
@@ -59,11 +88,15 @@ export default function POSDashboard() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
+  const [customerContact, setCustomerContact] = useState("");
   const [creditAmount, setCreditAmount] = useState("");
   const [creditNote, setCreditNote] = useState("");
+  const [promiseToPayDate, setPromiseToPayDate] = useState("");
   const [submittingCredit, setSubmittingCredit] = useState(false);
   const [creditFeatureReady, setCreditFeatureReady] = useState(true);
   const [recentCredits, setRecentCredits] = useState<CustomerCredit[]>([]);
+  const [dueCreditAlerts, setDueCreditAlerts] = useState<CustomerCredit[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
 
   // --- 1. Auth & Initial Data ---
   useEffect(() => {
@@ -122,16 +155,54 @@ export default function POSDashboard() {
         .select("*", { count: "exact", head: true })
         .lt("stock", 10);
 
+      const { data: lowStockData } = await supabase
+        .from("inventory")
+        .select(
+          `
+          id,
+          stock,
+          min_stock,
+          products (
+            name,
+            barcode
+          )
+        `,
+        )
+        .lte("stock", 10)
+        .order("stock", { ascending: true })
+        .limit(8);
+
       // Fetch Sales for Revenue Calculation & Table
       const { data: salesData } = await supabase
         .from("sales")
-        .select("id, total, created_at, receipt_no, status")
+        .select("id, total, created_at, receipt_no, status, user_id, profiles(full_name)")
         .order("created_at", { ascending: false });
 
       // Update States
       if (pCount !== null) setTotalProducts(pCount);
       if (uCount !== null) setTotalUsers(uCount);
       if (lCount !== null) setLowStockCount(lCount);
+      if (lowStockData) {
+        const normalizedLowStock = (
+          lowStockData as {
+            id: string;
+            stock: number;
+            min_stock: number;
+            products:
+              | { name: string; barcode: string | null }
+              | { name: string; barcode: string | null }[]
+              | null;
+          }[]
+        ).map((row) => ({
+          id: row.id,
+          stock: row.stock,
+          min_stock: row.min_stock,
+          products: Array.isArray(row.products)
+            ? (row.products[0] ?? null)
+            : row.products,
+        }));
+        setLowStockItems(normalizedLowStock);
+      }
 
       if (salesData) {
         setSales(salesData.slice(0, 5)); // Only show last 5 in table
@@ -155,12 +226,14 @@ export default function POSDashboard() {
 
       const { data: creditData, error: creditError } = await supabase
         .from("customer_credits")
-        .select("id, customer_name, amount, note, created_at")
+        .select(
+          "id, customer_name, contact_number, amount, note, promise_to_pay_date, is_paid, payment_status, created_at",
+        )
         .order("created_at", { ascending: false })
-        .limit(5);
+        .limit(10);
 
       if (creditError) {
-        if (creditError.code === "42P01") {
+        if (creditError.code === "42P01" || creditError.code === "42703") {
           setCreditFeatureReady(false);
         } else {
           console.error("Failed to fetch customer credits:", creditError.message);
@@ -168,6 +241,17 @@ export default function POSDashboard() {
       } else if (creditData) {
         setCreditFeatureReady(true);
         setRecentCredits(creditData as CustomerCredit[]);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const next7Days = new Date(now);
+        next7Days.setDate(next7Days.getDate() + 7);
+
+        const dueSoon = (creditData as CustomerCredit[]).filter((credit) => {
+          if (!credit.promise_to_pay_date || credit.is_paid) return false;
+          const promiseDate = new Date(credit.promise_to_pay_date);
+          return promiseDate >= now && promiseDate <= next7Days;
+        });
+        setDueCreditAlerts(dueSoon);
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
@@ -272,6 +356,42 @@ export default function POSDashboard() {
 
     setSubmittingSale(true);
 
+    const cartProductIds = cart.map((item) => item.id);
+    const { data: inventoryRows, error: inventoryError } = await supabase
+      .from("inventory")
+      .select("id, product_id, stock")
+      .eq("branch_id", activeBranchId)
+      .in("product_id", cartProductIds);
+
+    if (inventoryError) {
+      alert(inventoryError.message);
+      setSubmittingSale(false);
+      return;
+    }
+
+    const inventoryMap = new Map(
+      ((inventoryRows ?? []) as InventoryForSale[]).map((row) => [
+        row.product_id,
+        row,
+      ]),
+    );
+
+    for (const item of cart) {
+      const inv = inventoryMap.get(item.id);
+      if (!inv) {
+        alert(`No inventory record found for "${item.name}".`);
+        setSubmittingSale(false);
+        return;
+      }
+      if (inv.stock < item.quantity) {
+        alert(
+          `Insufficient stock for "${item.name}". Available: ${inv.stock}, requested: ${item.quantity}.`,
+        );
+        setSubmittingSale(false);
+        return;
+      }
+    }
+
     const receiptNo = `RCPT-${Date.now()}`;
     const { data: saleData, error } = await supabase
       .from("sales")
@@ -328,6 +448,26 @@ export default function POSDashboard() {
       return;
     }
 
+    for (const item of cart) {
+      const inv = inventoryMap.get(item.id)!;
+      const newStock = inv.stock - item.quantity;
+      const { error: updateInventoryError } = await supabase
+        .from("inventory")
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", inv.id);
+
+      if (updateInventoryError) {
+        alert(
+          `Sale created but failed to update stock for "${item.name}": ${updateInventoryError.message}`,
+        );
+        setSubmittingSale(false);
+        return;
+      }
+    }
+
     setIsModalOpen(false);
     setCart([]);
     setItemSearch("");
@@ -359,8 +499,12 @@ export default function POSDashboard() {
     const { error } = await supabase.from("customer_credits").insert([
       {
         customer_name: customerName.trim(),
+        contact_number: customerContact.trim() || null,
         amount,
         note: creditNote.trim() || null,
+        promise_to_pay_date: promiseToPayDate || null,
+        is_paid: false,
+        payment_status: "pending",
         branch_id: activeBranchId,
         created_by: currentUserId,
       },
@@ -381,8 +525,10 @@ export default function POSDashboard() {
 
     setIsCreditModalOpen(false);
     setCustomerName("");
+    setCustomerContact("");
     setCreditAmount("");
     setCreditNote("");
+    setPromiseToPayDate("");
     setSubmittingCredit(false);
     getDashboardData();
   };
@@ -475,6 +621,7 @@ export default function POSDashboard() {
                 <tr className="text-slate-400 text-sm bg-slate-50/50">
                   <th className="px-8 py-4 font-medium">Sale ID</th>
                   <th className="px-8 py-4 font-medium">Receipt</th>
+                  <th className="px-8 py-4 font-medium">Cashier</th>
                   <th className="px-8 py-4 font-medium">Date</th>
                   <th className="px-8 py-4 font-medium">Total Amount</th>
                   <th className="px-8 py-4 font-medium">Status</th>
@@ -493,6 +640,12 @@ export default function POSDashboard() {
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
                         {sale.receipt_no || "-"}
+                      </td>
+                      <td className="px-8 py-4 text-sm text-slate-500">
+                        {(Array.isArray(sale.profiles)
+                          ? sale.profiles[0]?.full_name
+                          : sale.profiles?.full_name) ||
+                          (sale.user_id ? `User ${sale.user_id.slice(0, 8)}` : "-")}
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
                         {new Date(sale.created_at).toLocaleDateString()}
@@ -533,7 +686,7 @@ export default function POSDashboard() {
                 ) : (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-8 py-10 text-center text-slate-400"
                     >
                       No transactions yet.
@@ -542,6 +695,65 @@ export default function POSDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-50">
+              <h3 className="text-lg font-bold">Promise-to-Pay Due Alerts</h3>
+              <p className="text-sm text-slate-500">
+                Credits due today and within 7 days.
+              </p>
+            </div>
+            <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+              {dueCreditAlerts.length > 0 ? (
+                dueCreditAlerts.map((credit) => (
+                  <div
+                    key={credit.id}
+                    className="border border-amber-100 bg-amber-50 rounded-xl p-3"
+                  >
+                    <p className="font-semibold text-sm">{credit.customer_name}</p>
+                    <p className="text-xs text-slate-600">
+                      ₱{Number(credit.amount).toFixed(2)} - due{" "}
+                      {credit.promise_to_pay_date
+                        ? new Date(credit.promise_to_pay_date).toLocaleDateString()
+                        : "-"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">No upcoming due promises.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-50">
+              <h3 className="text-lg font-bold">Low Stock Notifications</h3>
+              <p className="text-sm text-slate-500">
+                Items currently at low stock level.
+              </p>
+            </div>
+            <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+              {lowStockItems.length > 0 ? (
+                lowStockItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="border border-rose-100 bg-rose-50 rounded-xl p-3"
+                  >
+                    <p className="font-semibold text-sm">
+                      {item.products?.name || "Unknown item"}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Stock: {item.stock} / Threshold: {item.min_stock ?? 10}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">No low-stock alerts.</p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -556,6 +768,8 @@ export default function POSDashboard() {
                   <tr className="text-slate-400 text-sm bg-slate-50/50">
                     <th className="px-8 py-4 font-medium">Customer</th>
                     <th className="px-8 py-4 font-medium">Amount</th>
+                    <th className="px-8 py-4 font-medium">Promise Date</th>
+                    <th className="px-8 py-4 font-medium">Status</th>
                     <th className="px-8 py-4 font-medium">Note</th>
                     <th className="px-8 py-4 font-medium">Date</th>
                   </tr>
@@ -571,6 +785,26 @@ export default function POSDashboard() {
                           ₱{Number(credit.amount).toFixed(2)}
                         </td>
                         <td className="px-8 py-4 text-sm text-slate-500">
+                          {credit.promise_to_pay_date
+                            ? new Date(
+                                credit.promise_to_pay_date,
+                              ).toLocaleDateString()
+                            : "-"}
+                        </td>
+                        <td className="px-8 py-4 text-sm">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-bold ${
+                              credit.payment_status === "paid"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : credit.payment_status === "overdue"
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {credit.payment_status}
+                          </span>
+                        </td>
+                        <td className="px-8 py-4 text-sm text-slate-500">
                           {credit.note || "-"}
                         </td>
                         <td className="px-8 py-4 text-sm text-slate-500">
@@ -581,7 +815,7 @@ export default function POSDashboard() {
                   ) : (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={6}
                         className="px-8 py-10 text-center text-slate-400"
                       >
                         No customer credit records yet.
@@ -749,6 +983,12 @@ export default function POSDashboard() {
                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
               />
               <input
+                placeholder="Contact number (e.g. +639171234567)"
+                value={customerContact}
+                onChange={(e) => setCustomerContact(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+              />
+              <input
                 type="number"
                 min="0.01"
                 step="0.01"
@@ -763,6 +1003,17 @@ export default function POSDashboard() {
                 onChange={(e) => setCreditNote(e.target.value)}
                 className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
               />
+              <div>
+                <label className="text-sm font-bold text-slate-500 mb-1 block">
+                  Promise to Pay Date (optional)
+                </label>
+                <input
+                  type="date"
+                  value={promiseToPayDate}
+                  onChange={(e) => setPromiseToPayDate(e.target.value)}
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
               <button
                 disabled={submittingCredit}
                 onClick={handleAddCustomerCredit}

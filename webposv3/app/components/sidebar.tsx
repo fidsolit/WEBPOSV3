@@ -75,6 +75,12 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           <ShoppingCart size={20} />
           <span className="text-[15px]">New Sale</span>
         </button>
+        <SidebarItem
+          href="/customers"
+          icon={<Users size={20} />}
+          label="Customers"
+          active={pathname === "/customers"}
+        />
         {role === "admin" && (
           <>
             <SidebarItem
@@ -82,12 +88,6 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
               icon={<Package size={20} />}
               label="Inventory"
               active={pathname === "/inventory"}
-            />
-            <SidebarItem
-              href="/customers"
-              icon={<Users size={20} />}
-              label="Customers"
-              active={pathname === "/customers"}
             />
             <SidebarItem
               href="/cashiers"

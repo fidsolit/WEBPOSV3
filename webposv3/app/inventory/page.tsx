@@ -33,10 +33,17 @@ interface InventoryRow {
   products: InventoryProduct | InventoryProduct[] | null;
 }
 
+interface ProductOption {
+  id: string;
+  name: string;
+}
+
 export default function Inventory() {
   const router = useRouter();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [isLossModalOpen, setIsLossModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -49,6 +56,19 @@ export default function Inventory() {
     barcode: "",
     stock: "",
     price: "",
+  });
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [variantForm, setVariantForm] = useState({
+    productId: "",
+    name: "",
+    price: "",
+    barcode: "",
+    openingStock: "",
+  });
+  const [lossForm, setLossForm] = useState({
+    productId: "",
+    quantity: "",
+    reason: "",
   });
 
   const fetchInventory = useCallback(async (branchId: string) => {
@@ -87,6 +107,18 @@ export default function Inventory() {
     }
   }, []);
 
+  const loadProductOptions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name")
+      .order("name", { ascending: true });
+    if (error) {
+      console.error("Failed loading products:", error.message);
+      return;
+    }
+    setProductOptions((data as ProductOption[]) ?? []);
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       const {
@@ -123,12 +155,13 @@ export default function Inventory() {
         setActiveBranchId(branches[0].id);
         setActiveBranchName(branches[0].name);
         fetchInventory(branches[0].id);
+        loadProductOptions();
       } else {
         setActiveBranchName("No Branch Found");
       }
     };
     init();
-  }, [router, fetchInventory]);
+  }, [router, fetchInventory, loadProductOptions]);
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,6 +216,137 @@ export default function Inventory() {
     }
   };
 
+  const handleAddVariant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBranchId) return alert("No active branch found.");
+    if (!variantForm.productId || !variantForm.name.trim()) {
+      return alert("Please select a product and enter variant name.");
+    }
+    const parsedPrice = Number.parseFloat(variantForm.price || "0");
+    const parsedStock = Number.parseInt(variantForm.openingStock || "0", 10);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      return alert("Please enter a valid variant price.");
+    }
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      return alert("Please enter a valid opening stock.");
+    }
+
+    setLoading(true);
+    const { data: variant, error: variantError } = await supabase
+      .from("product_variants")
+      .insert([
+        {
+          product_id: variantForm.productId,
+          name: variantForm.name.trim(),
+          price: parsedPrice,
+          barcode: variantForm.barcode.trim() || null,
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (variantError || !variant) {
+      alert(variantError?.message || "Failed creating variant.");
+      setLoading(false);
+      return;
+    }
+
+    const { error: stockError } = await supabase
+      .from("inventory_variant_stock")
+      .insert([
+        {
+          variant_id: variant.id,
+          branch_id: activeBranchId,
+          stock: parsedStock,
+        },
+      ]);
+
+    if (stockError) {
+      alert(stockError.message);
+      setLoading(false);
+      return;
+    }
+
+    setIsVariantModalOpen(false);
+    setVariantForm({
+      productId: "",
+      name: "",
+      price: "",
+      barcode: "",
+      openingStock: "",
+    });
+    setLoading(false);
+    alert("Variant added successfully.");
+  };
+
+  const handleLogLoss = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeBranchId) return alert("No active branch found.");
+    const qty = Number.parseInt(lossForm.quantity, 10);
+    if (!lossForm.productId) return alert("Select a product.");
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return alert("Enter a valid loss quantity.");
+    }
+    if (!lossForm.reason.trim()) return alert("Reason is required.");
+
+    setLoading(true);
+    const { data: inv, error: invError } = await supabase
+      .from("inventory")
+      .select("id, stock")
+      .eq("branch_id", activeBranchId)
+      .eq("product_id", lossForm.productId)
+      .single();
+
+    if (invError || !inv) {
+      alert(invError?.message || "Inventory item not found.");
+      setLoading(false);
+      return;
+    }
+    if (inv.stock < qty) {
+      alert(`Not enough stock. Available: ${inv.stock}`);
+      setLoading(false);
+      return;
+    }
+
+    const { data: userRes } = await supabase.auth.getUser();
+    const userId = userRes.user?.id ?? null;
+
+    const { error: lossError } = await supabase.from("inventory_losses").insert([
+      {
+        branch_id: activeBranchId,
+        product_id: lossForm.productId,
+        quantity: qty,
+        reason: lossForm.reason.trim(),
+        created_by: userId,
+      },
+    ]);
+
+    if (lossError) {
+      alert(lossError.message);
+      setLoading(false);
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("inventory")
+      .update({
+        stock: inv.stock - qty,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", inv.id);
+
+    if (updateError) {
+      alert(updateError.message);
+      setLoading(false);
+      return;
+    }
+
+    setIsLossModalOpen(false);
+    setLossForm({ productId: "", quantity: "", reason: "" });
+    setLoading(false);
+    await fetchInventory(activeBranchId);
+  };
+
   if (checkingAuth)
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50">
@@ -220,6 +384,18 @@ export default function Inventory() {
             className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-blue-100"
           >
             <Plus size={20} /> Add Product
+          </button>
+          <button
+            onClick={() => setIsVariantModalOpen(true)}
+            className="bg-violet-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-violet-100"
+          >
+            <Plus size={20} /> Add Variant
+          </button>
+          <button
+            onClick={() => setIsLossModalOpen(true)}
+            className="bg-rose-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-rose-100"
+          >
+            <Plus size={20} /> Log Loss
           </button>
         </header>
 
@@ -361,6 +537,141 @@ export default function Inventory() {
                 ) : (
                   "Save Product"
                 )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isVariantModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Add Variant</h2>
+              <button
+                onClick={() => setIsVariantModalOpen(false)}
+                className="p-2 hover:bg-slate-100 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleAddVariant} className="space-y-4">
+              <select
+                required
+                value={variantForm.productId}
+                onChange={(e) =>
+                  setVariantForm({ ...variantForm, productId: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              >
+                <option value="">Select base product</option>
+                {productOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                required
+                placeholder="Variant name (e.g. 16GB RAM)"
+                value={variantForm.name}
+                onChange={(e) =>
+                  setVariantForm({ ...variantForm, name: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Variant price"
+                value={variantForm.price}
+                onChange={(e) =>
+                  setVariantForm({ ...variantForm, price: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <input
+                placeholder="Variant barcode (optional)"
+                value={variantForm.barcode}
+                onChange={(e) =>
+                  setVariantForm({ ...variantForm, barcode: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <input
+                type="number"
+                placeholder="Opening stock"
+                value={variantForm.openingStock}
+                onChange={(e) =>
+                  setVariantForm({ ...variantForm, openingStock: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <button
+                disabled={loading}
+                type="submit"
+                className="w-full py-4 bg-violet-600 text-white rounded-2xl font-bold"
+              >
+                {loading ? "Saving..." : "Save Variant"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isLossModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Log Inventory Loss</h2>
+              <button
+                onClick={() => setIsLossModalOpen(false)}
+                className="p-2 hover:bg-slate-100 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleLogLoss} className="space-y-4">
+              <select
+                required
+                value={lossForm.productId}
+                onChange={(e) =>
+                  setLossForm({ ...lossForm, productId: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              >
+                <option value="">Select product</option>
+                {productOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                required
+                type="number"
+                placeholder="Loss quantity"
+                value={lossForm.quantity}
+                onChange={(e) =>
+                  setLossForm({ ...lossForm, quantity: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <textarea
+                required
+                placeholder="Reason (damaged, expired, missing, etc.)"
+                value={lossForm.reason}
+                onChange={(e) =>
+                  setLossForm({ ...lossForm, reason: e.target.value })
+                }
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
+              />
+              <button
+                disabled={loading}
+                type="submit"
+                className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold"
+              >
+                {loading ? "Saving..." : "Save Loss Record"}
               </button>
             </form>
           </div>
