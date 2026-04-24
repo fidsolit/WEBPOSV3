@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Package,
   Users,
+  UserCog,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -21,6 +22,25 @@ interface SidebarProps {
 export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [role, setRole] = React.useState<"admin" | "cashier" | null>(null);
+
+  React.useEffect(() => {
+    const loadRole = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      if (profile?.role === "admin" || profile?.role === "cashier") {
+        setRole(profile.role);
+      }
+    };
+    loadRole();
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -55,28 +75,40 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           <ShoppingCart size={20} />
           <span className="text-[15px]">New Sale</span>
         </button>
-        <SidebarItem
-          href="/inventory"
-          icon={<Package size={20} />}
-          label="Inventory"
-          active={pathname === "/inventory"}
-        />
-        <SidebarItem
-          href="/customers"
-          icon={<Users size={20} />}
-          label="Customers"
-          active={pathname === "/customers"}
-        />
+        {role === "admin" && (
+          <>
+            <SidebarItem
+              href="/inventory"
+              icon={<Package size={20} />}
+              label="Inventory"
+              active={pathname === "/inventory"}
+            />
+            <SidebarItem
+              href="/customers"
+              icon={<Users size={20} />}
+              label="Customers"
+              active={pathname === "/customers"}
+            />
+            <SidebarItem
+              href="/cashiers"
+              icon={<UserCog size={20} />}
+              label="Cashiers"
+              active={pathname === "/cashiers"}
+            />
+          </>
+        )}
       </nav>
 
       {/* Bottom Nav */}
       <div className="pt-6 border-t border-slate-100 space-y-2">
-        <SidebarItem
-          href="/settings"
-          icon={<Settings size={20} />}
-          label="Settings"
-          active={pathname === "/settings"}
-        />
+        {role === "admin" && (
+          <SidebarItem
+            href="/settings"
+            icon={<Settings size={20} />}
+            label="Settings"
+            active={pathname === "/settings"}
+          />
+        )}
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 p-3 w-full rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-medium"

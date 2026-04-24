@@ -8,12 +8,29 @@ import Sidebar from "../components/sidebar";
 interface InventoryItem {
   id: string;
   stock: number;
-  products: {
-    id: string;
-    name: string;
-    price: number;
-    barcode: string;
-  };
+  min_stock?: number;
+  products:
+    | {
+        id: string;
+        name: string;
+        price: number;
+        barcode: string | null;
+      }
+    | null;
+}
+
+interface InventoryProduct {
+  id: string;
+  name: string;
+  price: number;
+  barcode: string | null;
+}
+
+interface InventoryRow {
+  id: string;
+  stock: number;
+  min_stock?: number;
+  products: InventoryProduct | InventoryProduct[] | null;
 }
 
 export default function Inventory() {
@@ -34,13 +51,15 @@ export default function Inventory() {
     price: "",
   });
 
-  const fetchInventory = useCallback(async () => {
+  const fetchInventory = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
       .from("inventory")
       .select(
         `
       id, 
       stock, 
+      min_stock,
+      branch_id,
       products (
         id, 
         name, 
@@ -49,7 +68,7 @@ export default function Inventory() {
       )
     `,
       )
-
+      .eq("branch_id", branchId)
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -58,18 +77,34 @@ export default function Inventory() {
     }
 
     if (data) {
-      console.log("Inventory Data Received:", data);
-      setItems(data as any);
+      const normalizedItems = (data as InventoryRow[]).map((row) => ({
+        id: row.id,
+        stock: row.stock,
+        min_stock: row.min_stock,
+        products: Array.isArray(row.products) ? (row.products[0] ?? null) : row.products,
+      }));
+      setItems(normalizedItems);
     }
   }, []);
 
   useEffect(() => {
     const init = async () => {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
         router.push("/auth/login");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.role !== "admin") {
+        router.push("/pos");
         return;
       }
       setCheckingAuth(false);
@@ -79,14 +114,18 @@ export default function Inventory() {
         .select("id, name")
         .limit(1);
 
+      if (branchError) {
+        setActiveBranchName("Branch load failed");
+        return;
+      }
+
       if (branches && branches.length > 0) {
         setActiveBranchId(branches[0].id);
         setActiveBranchName(branches[0].name);
+        fetchInventory(branches[0].id);
       } else {
         setActiveBranchName("No Branch Found");
       }
-
-      fetchInventory();
     };
     init();
   }, [router, fetchInventory]);
@@ -94,6 +133,14 @@ export default function Inventory() {
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeBranchId) return alert("Error: No active branch found.");
+    const parsedPrice = Number.parseFloat(newItem.price);
+    const parsedStock = Number.parseInt(newItem.stock, 10);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      return alert("Please enter a valid price.");
+    }
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      return alert("Please enter a valid stock.");
+    }
     setLoading(true);
 
     try {
@@ -102,8 +149,8 @@ export default function Inventory() {
         .insert([
           {
             name: newItem.name,
-            barcode: newItem.barcode,
-            price: parseFloat(newItem.price),
+            barcode: newItem.barcode || null,
+            price: parsedPrice,
             cost: 0,
           },
         ])
@@ -116,16 +163,20 @@ export default function Inventory() {
         {
           product_id: product.id,
           branch_id: activeBranchId,
-          stock: parseInt(newItem.stock),
+          stock: parsedStock,
         },
       ]);
 
       if (iError) throw iError;
 
-      await fetchInventory();
+      await fetchInventory(activeBranchId);
       setIsModalOpen(false);
       setNewItem({ name: "", barcode: "", stock: "", price: "" });
     } catch (err: any) {
+      if (err?.code === "23505") {
+        alert("Barcode already exists. Please use a unique barcode.");
+        return;
+      }
       alert(err.message);
     } finally {
       setLoading(false);
@@ -193,9 +244,19 @@ export default function Inventory() {
                       {item.products?.name || "Unknown"}
                     </td>
                     <td className="px-8 py-5 text-slate-500 font-medium">
-                      {item.products?.barcode}
+                      {item.products?.barcode || "-"}
                     </td>
-                    <td className="px-8 py-5 font-medium">{item.stock}</td>
+                    <td className="px-8 py-5 font-medium">
+                      <span
+                        className={
+                          item.stock <= (item.min_stock ?? 0)
+                            ? "text-rose-600 font-bold"
+                            : ""
+                        }
+                      >
+                        {item.stock}
+                      </span>
+                    </td>
                     <td className="px-8 py-5 text-emerald-600 font-bold">
                       ₱{item.products?.price?.toFixed(2)}
                     </td>
