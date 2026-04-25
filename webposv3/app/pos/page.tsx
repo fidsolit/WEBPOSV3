@@ -15,6 +15,7 @@ interface Sale {
   receipt_no: string | null;
   status: "saved" | "completed" | "void";
   user_id: string | null;
+
   profiles?:
     | {
         full_name: string | null;
@@ -105,6 +106,10 @@ export default function POSDashboard() {
   const [recentCredits, setRecentCredits] = useState<CustomerCredit[]>([]);
   const [dueCreditAlerts, setDueCreditAlerts] = useState<CustomerCredit[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
+
+  //payment  states
+  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [cashAmount, setCashAmount] = useState<string>("");
 
   // --- 1. Auth & Initial Data ---
   useEffect(() => {
@@ -226,7 +231,11 @@ export default function POSDashboard() {
       if (salesData) {
         const rows = salesData as Omit<Sale, "unit_cost_total" | "profiles">[];
         const uniqueUserIds = Array.from(
-          new Set(rows.map((sale) => sale.user_id).filter((id): id is string => Boolean(id))),
+          new Set(
+            rows
+              .map((sale) => sale.user_id)
+              .filter((id): id is string => Boolean(id)),
+          ),
         );
         let profileNameMap = new Map<string, string | null>();
 
@@ -236,13 +245,18 @@ export default function POSDashboard() {
             .select("id, full_name")
             .in("id", uniqueUserIds);
           if (profileError) {
-            console.error("Failed to fetch profile names:", profileError.message);
+            console.error(
+              "Failed to fetch profile names:",
+              profileError.message,
+            );
           } else {
             profileNameMap = new Map(
-              ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((p) => [
-                p.id,
-                p.full_name,
-              ]),
+              (
+                (profileRows ?? []) as {
+                  id: string;
+                  full_name: string | null;
+                }[]
+              ).map((p) => [p.id, p.full_name]),
             );
           }
         }
@@ -259,7 +273,8 @@ export default function POSDashboard() {
 
           const saleItemsRows = (saleItemsCostData as SaleItemCostRow[]) ?? [];
           saleCostMap = saleItemsRows.reduce((acc, row) => {
-            const lineCost = Number(row.unit_cost ?? 0) * Number(row.quantity ?? 0);
+            const lineCost =
+              Number(row.unit_cost ?? 0) * Number(row.quantity ?? 0);
             const current = acc.get(row.sale_id) ?? 0;
             acc.set(row.sale_id, current + lineCost);
             return acc;
@@ -275,7 +290,9 @@ export default function POSDashboard() {
               : null,
           })),
         );
-        const completedSales = salesData.filter((s) => s.status === "completed");
+        const completedSales = salesData.filter(
+          (s) => s.status === "completed",
+        );
         const totalRev = completedSales.reduce(
           (acc, s) => acc + Number(s.total),
           0,
@@ -307,7 +324,10 @@ export default function POSDashboard() {
         if (creditError.code === "42P01" || creditError.code === "42703") {
           setCreditFeatureReady(false);
         } else {
-          console.error("Failed to fetch customer credits:", creditError.message);
+          console.error(
+            "Failed to fetch customer credits:",
+            creditError.message,
+          );
         }
       } else if (creditData) {
         setCreditFeatureReady(true);
@@ -382,7 +402,9 @@ export default function POSDashboard() {
     }[];
 
     const items = rows
-      .map((row) => (Array.isArray(row.products) ? row.products[0] : row.products))
+      .map((row) =>
+        Array.isArray(row.products) ? row.products[0] : row.products,
+      )
       .filter((p): p is ProductCatalogItem => Boolean(p));
     setCatalogItems(items);
   }, [activeBranchId]);
@@ -569,7 +591,6 @@ export default function POSDashboard() {
     );
   });
 
-
   const handleAddCustomerCredit = async () => {
     if (!activeBranchId || !currentUserId) {
       return alert("Missing branch or user context.");
@@ -683,7 +704,10 @@ export default function POSDashboard() {
             label="Today's Sales"
             value={`₱${todaySales.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`}
           />
-          <StatCard label="Today's Transactions" value={todaySalesCount.toString()} />
+          <StatCard
+            label="Today's Transactions"
+            value={todaySalesCount.toString()}
+          />
           {userRole === "admin" ? (
             <StatCard
               label="Low Stock Alert"
@@ -700,7 +724,8 @@ export default function POSDashboard() {
           <div className="p-8 border-b border-slate-50">
             <h3 className="text-lg font-bold">Recent Transactions</h3>
             <p className="text-sm text-slate-500 mt-1">
-              Latest sales recorded in your POS, including unit cost per transaction.
+              Latest sales recorded in your POS, including unit cost per
+              transaction.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -733,7 +758,9 @@ export default function POSDashboard() {
                         {(Array.isArray(sale.profiles)
                           ? sale.profiles[0]?.full_name
                           : sale.profiles?.full_name) ||
-                          (sale.user_id ? `User ${sale.user_id.slice(0, 8)}` : "-")}
+                          (sale.user_id
+                            ? `User ${sale.user_id.slice(0, 8)}`
+                            : "-")}
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
                         {new Date(sale.created_at).toLocaleDateString()}
@@ -801,17 +828,23 @@ export default function POSDashboard() {
                     key={credit.id}
                     className="border border-amber-100 bg-amber-50 rounded-xl p-3"
                   >
-                    <p className="font-semibold text-sm">{credit.customer_name}</p>
+                    <p className="font-semibold text-sm">
+                      {credit.customer_name}
+                    </p>
                     <p className="text-xs text-slate-600">
                       ₱{Number(credit.amount).toFixed(2)} - due{" "}
                       {credit.promise_to_pay_date
-                        ? new Date(credit.promise_to_pay_date).toLocaleDateString()
+                        ? new Date(
+                            credit.promise_to_pay_date,
+                          ).toLocaleDateString()
                         : "-"}
                     </p>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-400">No upcoming due promises.</p>
+                <p className="text-sm text-slate-400">
+                  No upcoming due promises.
+                </p>
               )}
             </div>
           </div>
@@ -980,7 +1013,7 @@ export default function POSDashboard() {
                   )}
                 </div>
               </div>
-
+              {/* //cart code */}
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
                 <h3 className="font-bold mb-3">Cart</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1036,6 +1069,33 @@ export default function POSDashboard() {
                   <div className="flex justify-between font-bold text-lg">
                     <span>Total</span>
                     <span>₱{cartSubtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Cash</span>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="0.00"
+                      value={cashAmount}
+                      // This blocks 'e', '+', and '-' which are technically allowed in type="number"
+                      onKeyDown={(e) => {
+                        if (["e", "E", "+", "-"].includes(e.key)) {
+                          e.preventDefault();
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        // Strict numeric check using regex to ensure it's only numbers and one decimal
+                        if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                          setCashAmount(val);
+                        }
+                      }}
+                      className={`w-full p-2 ml-5 bg-slate-50 border rounded-xl outline-none focus:ring-2 transition-all ${
+                        Number(cashAmount) < cartSubtotal && cashAmount !== ""
+                          ? "border-red-500 focus:ring-red-200"
+                          : "border-slate-200 focus:ring-blue-600"
+                      }`}
+                    />
                   </div>
                   <button
                     disabled={submittingSale || cart.length === 0}
