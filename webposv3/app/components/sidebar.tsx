@@ -38,7 +38,11 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
         .select("role")
         .eq("id", user.id)
         .single();
-      if (profile?.role === "admin" || profile?.role === "cashier") {
+      if (
+        profile?.role === "admin" ||
+        profile?.role === "cashier" ||
+        profile?.role === "user"
+      ) {
         setRole(profile.role);
       }
     };
@@ -95,7 +99,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
             <SidebarItem
               href="/cashiers"
               icon={<UserCog size={20} />}
-              label="Cashiers"
+              label="Users"
               active={pathname === "/cashiers"}
             />
             <SidebarItem

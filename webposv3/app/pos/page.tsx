@@ -106,6 +106,7 @@ export default function POSDashboard() {
   const [recentCredits, setRecentCredits] = useState<CustomerCredit[]>([]);
   const [dueCreditAlerts, setDueCreditAlerts] = useState<CustomerCredit[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
+  const [change, setchange] = useState<number>(0);
 
   //payment  states
   const [paymentMethod, setPaymentMethod] = useState("Cash");
@@ -1088,15 +1089,25 @@ export default function POSDashboard() {
                         // Strict numeric check using regex to ensure it's only numbers and one decimal
                         if (val === "" || /^\d*\.?\d*$/.test(val)) {
                           setCashAmount(val);
+                          setchange(Number(val) - cartSubtotal);
                         }
                       }}
-                      className={`w-full p-2 ml-5 bg-slate-50 border rounded-xl outline-none focus:ring-2 transition-all ${
+                      className={`w-50 p-2 ml-5 bg-slate-50 border rounded-xl outline-none focus:ring-2 transition-all ${
                         Number(cashAmount) < cartSubtotal && cashAmount !== ""
                           ? "border-red-500 focus:ring-red-200"
                           : "border-slate-200 focus:ring-blue-600"
                       }`}
                     />
                   </div>
+                  {/* //change codes */}
+
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Change</span>
+
+                    <span>₱{change.toFixed(2)}</span>
+                  </div>
+
+                  {/* end change codes */}
                   <button
                     disabled={submittingSale || cart.length === 0}
                     onClick={handleAddNewSale}

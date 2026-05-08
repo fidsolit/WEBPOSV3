@@ -39,17 +39,24 @@ export default function CashiersPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [{ data: branchData, error: branchError }, { data: profileData, error: profileError }] =
-      await Promise.all([
-        supabase.from("branches").select("id, name").order("name", { ascending: true }),
-        supabase
-          .from("profiles")
-          .select("id, full_name, role, is_approved, branch_id, created_at")
-          .order("created_at", { ascending: false }),
-      ]);
+    const [
+      { data: branchData, error: branchError },
+      { data: profileData, error: profileError },
+    ] = await Promise.all([
+      supabase
+        .from("branches")
+        .select("id, name")
+        .order("name", { ascending: true }),
+      supabase
+        .from("profiles")
+        .select("id, full_name, role, is_approved, branch_id, created_at")
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (branchError) console.error("Failed to fetch branches:", branchError.message);
-    if (profileError) console.error("Failed to fetch profiles:", profileError.message);
+    if (branchError)
+      console.error("Failed to fetch branches:", branchError.message);
+    if (profileError)
+      console.error("Failed to fetch profiles:", profileError.message);
 
     setBranches((branchData as Branch[]) ?? []);
     setProfiles((profileData as CashierProfile[]) ?? []);
@@ -91,7 +98,9 @@ export default function CashiersPage() {
     return profiles
       .map((profile) => ({
         ...profile,
-        branchName: profile.branch_id ? branchMap.get(profile.branch_id) || "Unknown branch" : "Unassigned",
+        branchName: profile.branch_id
+          ? branchMap.get(profile.branch_id) || "Unknown branch"
+          : "Unassigned",
       }))
       .filter((profile) => {
         const matchesRole = roleFilter === "all" || profile.role === roleFilter;
@@ -108,7 +117,10 @@ export default function CashiersPage() {
 
   const updateProfile = async (id: string, patch: Partial<CashierProfile>) => {
     setSaving(id);
-    const { error } = await supabase.from("profiles").update(patch).eq("id", id);
+    const { error } = await supabase
+      .from("profiles")
+      .update(patch)
+      .eq("id", id);
     if (error) {
       alert(error.message);
       setSaving(null);
@@ -116,7 +128,9 @@ export default function CashiersPage() {
     }
 
     setProfiles((current) =>
-      current.map((profile) => (profile.id === id ? { ...profile, ...patch } : profile)),
+      current.map((profile) =>
+        profile.id === id ? { ...profile, ...patch } : profile,
+      ),
     );
     setSaving(null);
   };
@@ -135,21 +149,31 @@ export default function CashiersPage() {
       <main className="flex-1 overflow-y-auto p-6 md:p-10">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Cashier Management</h1>
-            <p className="text-slate-500 mt-1">Manage cashier roles and branch assignments.</p>
+            <h1 className="text-3xl font-bold">User Management</h1>
+            <p className="text-slate-500 mt-1">
+              Manage user roles and branch assignments.
+            </p>
           </div>
           <button
             onClick={loadData}
             disabled={loading}
             className="px-5 py-3 rounded-2xl bg-white border border-slate-200 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 disabled:opacity-60"
           >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+            {loading ? (
+              <Loader2 className="animate-spin" size={18} />
+            ) : (
+              <RefreshCw size={18} />
+            )}
             Refresh
           </button>
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <StatTile label="Total Staff" value={profiles.length.toString()} icon={<UserCircle2 size={18} />} />
+          <StatTile
+            label="Total Staff"
+            value={profiles.length.toString()}
+            icon={<UserCircle2 size={18} />}
+          />
           <StatTile
             label="Admins"
             value={profiles.filter((p) => p.role === "admin").length.toString()}
@@ -157,7 +181,9 @@ export default function CashiersPage() {
           />
           <StatTile
             label="Cashiers"
-            value={profiles.filter((p) => p.role === "cashier").length.toString()}
+            value={profiles
+              .filter((p) => p.role === "cashier")
+              .length.toString()}
             icon={<UserCircle2 size={18} />}
           />
         </section>
@@ -181,7 +207,10 @@ export default function CashiersPage() {
         <section className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row gap-3 md:items-center">
             <div className="relative flex-1">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -215,14 +244,22 @@ export default function CashiersPage() {
               <tbody className="divide-y divide-slate-100">
                 {!loading && rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
+                    <td
+                      colSpan={6}
+                      className="px-6 py-10 text-center text-slate-400"
+                    >
                       No cashiers found.
                     </td>
                   </tr>
                 )}
                 {rows.map((profile) => (
-                  <tr key={profile.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-6 py-4 font-semibold">{profile.full_name || "No name"}</td>
+                  <tr
+                    key={profile.id}
+                    className="hover:bg-slate-50/60 transition-colors"
+                  >
+                    <td className="px-6 py-4 font-semibold">
+                      {profile.full_name || "No name"}
+                    </td>
                     <td className="px-6 py-4 text-xs text-slate-500 font-mono">
                       {profile.id.slice(0, 8)}...
                     </td>
@@ -259,7 +296,9 @@ export default function CashiersPage() {
                           {profile.is_approved ? "Approved" : "Approve"}
                         </button>
                       ) : (
-                        <span className="text-xs font-semibold text-slate-400">N/A</span>
+                        <span className="text-xs font-semibold text-slate-400">
+                          N/A
+                        </span>
                       )}
                     </td>
                     <td className="px-6 py-4">
@@ -314,4 +353,3 @@ function StatTile({
     </div>
   );
 }
-

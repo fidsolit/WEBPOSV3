@@ -50,7 +50,7 @@ export default function RegisterPage() {
         options: {
           data: {
             full_name: fullName || email.split("@")[0],
-            role: "cashier",
+            role: "user",
           },
         },
       });
@@ -76,9 +76,11 @@ export default function RegisterPage() {
           .from("profiles")
           .update({ is_approved: false })
           .eq("id", data.session.user.id)
-          .eq("role", "cashier");
+          .eq("role", "user");
         await supabase.auth.signOut();
-        setError("Signup successful. Please wait for admin approval before logging in.");
+        setError(
+          "Signup successful. Please wait for admin approval before logging in.",
+        );
       } else {
         if (data?.user?.id) {
           await supabase
