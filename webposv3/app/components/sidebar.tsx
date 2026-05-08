@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { useEffect, useState } from "react";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -23,9 +25,9 @@ interface SidebarProps {
 export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [role, setRole] = React.useState<"admin" | "cashier" | null>(null);
+  const [role, setRole] = useState<"admin" | "cashier" | "user" | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const loadRole = async () => {
       const {
         data: { user },
