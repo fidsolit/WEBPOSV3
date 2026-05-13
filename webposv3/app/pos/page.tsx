@@ -62,6 +62,13 @@ interface SaleItemCostRow {
   unit_cost: number | null;
 }
 
+interface SaleItemForVoid {
+  id: string;
+  product_id: string;
+  quantity: number;
+  unit_cost: number | null;
+}
+
 interface LowStockItem {
   id: string;
   stock: number;
@@ -641,16 +648,123 @@ export default function POSDashboard() {
   };
 
   const handleVoidSale = async (saleId: string) => {
+    if (!activeBranchId || !currentUserId) {
+      alert("Missing branch or user context.");
+      return;
+    }
+
     const confirmed = window.confirm(
-      "Void this transaction? Inventory rollback is not yet automated.",
+      "Void this transaction and return the sold items back to inventory?",
     );
     if (!confirmed) return;
+
+    const { data: saleRow, error: saleError } = await supabase
+      .from("sales")
+      .select("id, status")
+      .eq("id", saleId)
+      .single();
+
+    if (saleError) {
+      alert(saleError.message);
+      return;
+    }
+
+    if (saleRow?.status === "void") {
+      alert("This sale is already voided.");
+      return;
+    }
+
+    const { data: saleItemsData, error: saleItemsError } = await supabase
+      .from("sale_items")
+      .select("id, product_id, quantity, unit_cost")
+      .eq("sale_id", saleId);
+
+    if (saleItemsError) {
+      alert(saleItemsError.message);
+      return;
+    }
+
+    const saleItems = (saleItemsData as SaleItemForVoid[]) ?? [];
+    const productIds = Array.from(
+      new Set(
+        saleItems
+          .map((item) => item.product_id)
+          .filter((productId): productId is string => Boolean(productId)),
+      ),
+    );
+
+    if (productIds.length > 0) {
+      const { data: inventoryRows, error: inventoryError } = await supabase
+        .from("inventory")
+        .select("id, product_id, stock")
+        .eq("branch_id", activeBranchId)
+        .in("product_id", productIds);
+
+      if (inventoryError) {
+        alert(inventoryError.message);
+        return;
+      }
+
+      const inventoryMap = new Map(
+        ((inventoryRows ?? []) as InventoryForSale[]).map((row) => [
+          row.product_id,
+          row,
+        ]),
+      );
+
+      for (const item of saleItems) {
+        const inventoryRecord = inventoryMap.get(item.product_id);
+        if (!inventoryRecord) {
+          alert("Unable to restore inventory because a stock record is missing.");
+          return;
+        }
+
+        const restoredStock =
+          Number(inventoryRecord.stock ?? 0) + Number(item.quantity ?? 0);
+
+        const { error: updateInventoryError } = await supabase
+          .from("inventory")
+          .update({
+            stock: restoredStock,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", inventoryRecord.id);
+
+        if (updateInventoryError) {
+          alert(updateInventoryError.message);
+          return;
+        }
+
+        const { error: movementError } = await supabase
+          .from("stock_movements")
+          .insert([
+            {
+              branch_id: activeBranchId,
+              product_id: item.product_id,
+              movement_type: "void_restore",
+              quantity: Number(item.quantity ?? 0),
+              unit_cost: Number(item.unit_cost ?? 0),
+              reference_type: "sale",
+              reference_id: saleId,
+              note: "Inventory restored from voided sale.",
+              created_by: currentUserId,
+            },
+          ]);
+
+        if (movementError) {
+          alert(movementError.message);
+          return;
+        }
+      }
+    }
 
     const { error } = await supabase
       .from("sales")
       .update({
         status: "void",
         voided_at: new Date().toISOString(),
+        voided_by: currentUserId,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", saleId);
 
