@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { MoreVertical, Loader2, Plus, Search, X } from "lucide-react";
+import { Eye, Loader2, MoreVertical, Plus, Printer, Search, X } from "lucide-react";
 import Sidebar from "../components/sidebar";
 
 // --- Types ---
@@ -69,6 +69,58 @@ interface SaleItemForVoid {
   unit_cost: number | null;
 }
 
+interface SaleDetailLineItem {
+  id: string;
+  product_id: string;
+  quantity: number;
+  price: number;
+  line_subtotal: number;
+  unit_cost: number | null;
+  note: string | null;
+  products: {
+    name: string;
+    barcode: string | null;
+  } | {
+    name: string;
+    barcode: string | null;
+  }[] | null;
+}
+
+interface SaleDetail {
+  id: string;
+  receipt_no: string | null;
+  created_at: string;
+  status: "saved" | "completed" | "void";
+  total: number;
+  subtotal: number | null;
+  discount_amount: number | null;
+  tax: number | null;
+  notes: string | null;
+  payments: {
+    method: string | null;
+    amount: number;
+    status: string | null;
+  }[] | null;
+  cashier_profile?:
+    | {
+        full_name: string | null;
+      }
+    | {
+        full_name: string | null;
+      }[]
+    | null;
+  items: Array<{
+    id: string;
+    productName: string;
+    barcode: string | null;
+    quantity: number;
+    price: number;
+    unit_cost: number | null;
+    line_subtotal: number;
+    note: string | null;
+  }>;
+}
+
 interface LowStockItem {
   id: string;
   stock: number;
@@ -81,6 +133,10 @@ interface LowStockItem {
 
 export default function POSDashboard() {
   const router = useRouter();
+  const pesoFormatter = new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+  });
 
   // --- States ---
   const [sales, setSales] = useState<Sale[]>([]);
@@ -114,6 +170,10 @@ export default function POSDashboard() {
   const [dueCreditAlerts, setDueCreditAlerts] = useState<CustomerCredit[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
   const [change, setchange] = useState<number>(0);
+  const [selectedSaleDetail, setSelectedSaleDetail] = useState<SaleDetail | null>(
+    null,
+  );
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   //payment  states
   const [paymentMethod, setPaymentMethod] = useState("Cash");
@@ -775,6 +835,166 @@ export default function POSDashboard() {
     await getDashboardData();
   };
 
+  const viewSaleDetails = async (sale: Sale) => {
+    setDetailsLoading(true);
+
+    const { data: saleData, error: saleError } = await supabase
+      .from("sales")
+      .select(
+        `
+        id,
+        receipt_no,
+        created_at,
+        status,
+        total,
+        subtotal,
+        discount_amount,
+        tax,
+        notes,
+        cashier_profile:profiles!sales_user_id_fkey (
+          full_name
+        ),
+        payments (
+          method,
+          amount,
+          status
+        )
+      `,
+      )
+      .eq("id", sale.id)
+      .single();
+
+    if (saleError || !saleData) {
+      alert(saleError?.message || "Failed to load transaction details.");
+      setDetailsLoading(false);
+      return;
+    }
+
+    const { data: saleItemsData, error: saleItemsError } = await supabase
+      .from("sale_items")
+      .select(
+        `
+        id,
+        product_id,
+        quantity,
+        price,
+        line_subtotal,
+        unit_cost,
+        note,
+        products (
+          name,
+          barcode
+        )
+      `,
+      )
+      .eq("sale_id", sale.id)
+      .order("created_at", { ascending: true });
+
+    if (saleItemsError) {
+      alert(saleItemsError.message);
+      setDetailsLoading(false);
+      return;
+    }
+
+    const items = ((saleItemsData ?? []) as SaleDetailLineItem[]).map((item) => {
+      const product = Array.isArray(item.products)
+        ? (item.products[0] ?? null)
+        : item.products;
+
+      return {
+        id: item.id,
+        productName: product?.name || "Unknown item",
+        barcode: product?.barcode ?? null,
+        quantity: Number(item.quantity ?? 0),
+        price: Number(item.price ?? 0),
+        unit_cost: item.unit_cost,
+        line_subtotal: Number(item.line_subtotal ?? 0),
+        note: item.note,
+      };
+    });
+
+    setSelectedSaleDetail({
+      ...(saleData as Omit<SaleDetail, "items">),
+      items,
+    });
+    setDetailsLoading(false);
+  };
+
+  const closeSaleDetails = () => {
+    setSelectedSaleDetail(null);
+    setDetailsLoading(false);
+  };
+
+  const printSaleDetails = (sale: SaleDetail) => {
+    const cashierName =
+      (Array.isArray(sale.cashier_profile)
+        ? sale.cashier_profile[0]?.full_name
+        : sale.cashier_profile?.full_name) || "-";
+    const paymentSummary =
+      sale.payments && sale.payments.length > 0
+        ? sale.payments
+            .map((payment) =>
+              `${payment.method || "Unknown"} - ${pesoFormatter.format(Number(payment.amount ?? 0))}`,
+            )
+            .join("<br />")
+        : "No payments recorded";
+    const itemRows = sale.items
+      .map(
+        (item) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${item.productName}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${item.quantity}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${pesoFormatter.format(item.price)}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${pesoFormatter.format(item.line_subtotal)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      alert("Unable to open print preview.");
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Transaction ${sale.receipt_no || sale.id}</title>
+        </head>
+        <body style="font-family:Arial,sans-serif;padding:24px;color:#0f172a;">
+          <h1 style="margin-bottom:8px;">Transaction Details</h1>
+          <p><strong>Receipt:</strong> ${sale.receipt_no || "-"}</p>
+          <p><strong>Sale ID:</strong> ${sale.id}</p>
+          <p><strong>Date & Time:</strong> ${new Date(sale.created_at).toLocaleString()}</p>
+          <p><strong>Cashier:</strong> ${cashierName}</p>
+          <p><strong>Status:</strong> ${sale.status}</p>
+          <p><strong>Payments:</strong><br />${paymentSummary}</p>
+          <table style="width:100%;border-collapse:collapse;margin-top:16px;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Item</th>
+                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Qty</th>
+                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Price</th>
+                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Total</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <div style="margin-top:24px;">
+            <p><strong>Subtotal:</strong> ${pesoFormatter.format(Number(sale.subtotal ?? sale.total))}</p>
+            <p><strong>Discount:</strong> ${pesoFormatter.format(Number(sale.discount_amount ?? 0))}</p>
+            <p><strong>Tax:</strong> ${pesoFormatter.format(Number(sale.tax ?? 0))}</p>
+            <p><strong>Total:</strong> ${pesoFormatter.format(Number(sale.total ?? 0))}</p>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
   if (checkingAuth) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-slate-50">
@@ -850,7 +1070,7 @@ export default function POSDashboard() {
                   <th className="px-8 py-4 font-medium">Sale ID</th>
                   <th className="px-8 py-4 font-medium">Receipt</th>
                   <th className="px-8 py-4 font-medium">Cashier</th>
-                  <th className="px-8 py-4 font-medium">Date</th>
+                  <th className="px-8 py-4 font-medium">Date & Time</th>
                   <th className="px-8 py-4 font-medium">Total Amount</th>
                   <th className="px-8 py-4 font-medium">Status</th>
                   <th className="px-8 py-4 text-right font-medium">Action</th>
@@ -878,7 +1098,7 @@ export default function POSDashboard() {
                             : "-")}
                       </td>
                       <td className="px-8 py-4 text-sm text-slate-500">
-                        {new Date(sale.created_at).toLocaleDateString()}
+                        {new Date(sale.created_at).toLocaleString()}
                       </td>
                       <td className="px-8 py-4 font-bold text-sm text-emerald-600">
                         ₱{sale.total.toFixed(2)}
@@ -897,19 +1117,28 @@ export default function POSDashboard() {
                         </span>
                       </td>
                       <td className="px-8 py-4 text-right">
-                        {sale.status !== "void" ? (
+                        <div className="inline-flex items-center gap-2">
                           <button
-                            onClick={() => handleVoidSale(sale.id)}
-                            className="text-xs font-semibold px-3 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100"
+                            onClick={() => viewSaleDetails(sale)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
                           >
-                            Void
+                            <Eye size={14} />
+                            Details
                           </button>
-                        ) : (
-                          <MoreVertical
-                            size={16}
-                            className="ml-auto text-slate-400 inline"
-                          />
-                        )}
+                          {sale.status !== "void" ? (
+                            <button
+                              onClick={() => handleVoidSale(sale.id)}
+                              className="text-xs font-semibold px-3 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100"
+                            >
+                              Void
+                            </button>
+                          ) : (
+                            <MoreVertical
+                              size={16}
+                              className="ml-auto text-slate-400 inline"
+                            />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1295,6 +1524,198 @@ export default function POSDashboard() {
                 {submittingCredit ? "Saving..." : "Save Credit"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {(detailsLoading || selectedSaleDetail) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Transaction Details</h2>
+                <p className="text-sm text-slate-500">
+                  View sold items, exact time, and print when needed.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedSaleDetail ? (
+                  <button
+                    onClick={() => printSaleDetails(selectedSaleDetail)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
+                    <Printer size={16} />
+                    Print
+                  </button>
+                ) : null}
+                <button
+                  onClick={closeSaleDetails}
+                  className="rounded-full p-2 hover:bg-slate-100"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {detailsLoading || !selectedSaleDetail ? (
+              <div className="flex min-h-64 items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Receipt
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {selectedSaleDetail.receipt_no || "-"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Cashier
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {(Array.isArray(selectedSaleDetail.cashier_profile)
+                        ? selectedSaleDetail.cashier_profile[0]?.full_name
+                        : selectedSaleDetail.cashier_profile?.full_name) || "-"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Date & Time
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {new Date(selectedSaleDetail.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Status
+                    </p>
+                    <p className="mt-1 font-semibold capitalize text-slate-900">
+                      {selectedSaleDetail.status}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-50 text-sm text-slate-500">
+                        <th className="px-4 py-3 font-medium">Item</th>
+                        <th className="px-4 py-3 font-medium">Barcode</th>
+                        <th className="px-4 py-3 font-medium">Qty</th>
+                        <th className="px-4 py-3 font-medium">Price</th>
+                        <th className="px-4 py-3 font-medium">Line Total</th>
+                        <th className="px-4 py-3 font-medium">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedSaleDetail.items.map((item) => (
+                        <tr key={item.id}>
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {item.productName}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-500">
+                            {item.barcode || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {item.quantity}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {pesoFormatter.format(item.price)}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-emerald-600">
+                            {pesoFormatter.format(item.line_subtotal)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-500">
+                            {item.note || "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Payments
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {selectedSaleDetail.payments &&
+                      selectedSaleDetail.payments.length > 0 ? (
+                        selectedSaleDetail.payments.map((payment, index) => (
+                          <div
+                            key={`${payment.method || "payment"}-${index}`}
+                            className="flex items-center justify-between text-sm"
+                          >
+                            <span className="capitalize text-slate-600">
+                              {payment.method || "Unknown"}
+                            </span>
+                            <span className="font-semibold text-slate-900">
+                              {pesoFormatter.format(Number(payment.amount ?? 0))}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-400">
+                          No payment records available.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-slate-400">
+                      Summary
+                    </p>
+                    <div className="mt-2 space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">Subtotal</span>
+                        <span className="font-semibold text-slate-900">
+                          {pesoFormatter.format(
+                            Number(
+                              selectedSaleDetail.subtotal ?? selectedSaleDetail.total,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">Discount</span>
+                        <span className="font-semibold text-slate-900">
+                          {pesoFormatter.format(
+                            Number(selectedSaleDetail.discount_amount ?? 0),
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">Tax</span>
+                        <span className="font-semibold text-slate-900">
+                          {pesoFormatter.format(Number(selectedSaleDetail.tax ?? 0))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base">
+                        <span className="font-semibold text-slate-700">Total</span>
+                        <span className="font-bold text-emerald-600">
+                          {pesoFormatter.format(Number(selectedSaleDetail.total ?? 0))}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase text-slate-400">
+                    Sale Note
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {selectedSaleDetail.notes || "No sale note recorded."}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
