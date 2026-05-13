@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Plus, Search, X } from "lucide-react";
 import Sidebar from "../components/sidebar";
@@ -29,8 +29,26 @@ interface RegisteredCustomer {
   id: string;
   full_name: string;
   contact_number: string | null;
+  email: string | null;
+  address: string | null;
   notes: string | null;
 }
+
+interface CustomerFormState {
+  fullName: string;
+  contactNumber: string;
+  email: string;
+  address: string;
+  notes: string;
+}
+
+const EMPTY_CUSTOMER_FORM: CustomerFormState = {
+  fullName: "",
+  contactNumber: "",
+  email: "",
+  address: "",
+  notes: "",
+};
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -43,15 +61,62 @@ export default function CustomersPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerFeatureReady, setCustomerFeatureReady] = useState(true);
   const [registeredCustomers, setRegisteredCustomers] = useState<
     RegisteredCustomer[]
   >([]);
-  const [newCustomer, setNewCustomer] = useState({
-    fullName: "",
-    contactNumber: "",
-    notes: "",
-  });
+  const [customerForm, setCustomerForm] = useState<CustomerFormState>(
+    EMPTY_CUSTOMER_FORM,
+  );
+
+  const loadRegisteredCustomers = useCallback(async (branchId: string | null) => {
+    if (!branchId) return;
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, full_name, contact_number, email, address, notes")
+      .eq("branch_id", branchId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) {
+      if (error.code === "42P01") {
+        setCustomerFeatureReady(false);
+        return;
+      }
+      alert(error.message);
+      return;
+    }
+    setCustomerFeatureReady(true);
+    setRegisteredCustomers((data as RegisteredCustomer[]) ?? []);
+  }, []);
+
+  const syncOverdueStatuses = useCallback(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    await supabase
+      .from("customer_credits")
+      .update({ payment_status: "overdue" })
+      .eq("is_paid", false)
+      .lt("promise_to_pay_date", today)
+      .neq("payment_status", "overdue");
+  }, []);
+
+  const loadCustomerCredits = useCallback(async () => {
+    setLoading(true);
+    await syncOverdueStatuses();
+    const { data, error } = await supabase
+      .from("customer_credits")
+      .select(
+        "id, customer_name, contact_number, amount, promise_to_pay_date, is_paid, payment_status",
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      setRows((data as CustomerCreditRow[]) ?? []);
+    }
+    setLoading(false);
+  }, [syncOverdueStatuses]);
 
   useEffect(() => {
     const init = async () => {
@@ -86,55 +151,7 @@ export default function CustomersPage() {
       await loadRegisteredCustomers(resolvedBranchId);
     };
     init();
-  }, [router]);
-
-  const loadCustomerCredits = async () => {
-    setLoading(true);
-    await syncOverdueStatuses();
-    const { data, error } = await supabase
-      .from("customer_credits")
-      .select(
-        "id, customer_name, contact_number, amount, promise_to_pay_date, is_paid, payment_status",
-      )
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      alert(error.message);
-    } else {
-      setRows((data as CustomerCreditRow[]) ?? []);
-    }
-    setLoading(false);
-  };
-
-  const loadRegisteredCustomers = async (branchId: string | null) => {
-    if (!branchId) return;
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, full_name, contact_number, notes")
-      .eq("branch_id", branchId)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (error) {
-      if (error.code === "42P01") {
-        setCustomerFeatureReady(false);
-        return;
-      }
-      alert(error.message);
-      return;
-    }
-    setCustomerFeatureReady(true);
-    setRegisteredCustomers((data as RegisteredCustomer[]) ?? []);
-  };
-
-  const syncOverdueStatuses = async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    await supabase
-      .from("customer_credits")
-      .update({ payment_status: "overdue" })
-      .eq("is_paid", false)
-      .lt("promise_to_pay_date", today)
-      .neq("payment_status", "overdue");
-  };
+  }, [loadCustomerCredits, loadRegisteredCustomers, router]);
 
   const customers = useMemo(() => {
     const map = new Map<string, CustomerSummary>();
@@ -243,14 +260,16 @@ export default function CustomersPage() {
     }
     if (!branchId) return alert("No branch found. Please create a branch first.");
 
-    if (!newCustomer.fullName.trim()) {
+    if (!customerForm.fullName.trim()) {
       return alert("Customer name is required.");
     }
     const { error } = await supabase.from("customers").insert([
       {
-        full_name: newCustomer.fullName.trim(),
-        contact_number: newCustomer.contactNumber.trim() || null,
-        notes: newCustomer.notes.trim() || null,
+        full_name: customerForm.fullName.trim(),
+        contact_number: customerForm.contactNumber.trim() || null,
+        email: customerForm.email.trim() || null,
+        address: customerForm.address.trim() || null,
+        notes: customerForm.notes.trim() || null,
         branch_id: branchId,
         created_by: currentUserId,
       },
@@ -266,8 +285,58 @@ export default function CustomersPage() {
       return;
     }
     setIsAddCustomerOpen(false);
-    setNewCustomer({ fullName: "", contactNumber: "", notes: "" });
+    setCustomerForm(EMPTY_CUSTOMER_FORM);
     await loadRegisteredCustomers(branchId);
+  };
+
+  const openEditCustomer = (customer: RegisteredCustomer) => {
+    setEditingCustomerId(customer.id);
+    setCustomerForm({
+      fullName: customer.full_name,
+      contactNumber: customer.contact_number ?? "",
+      email: customer.email ?? "",
+      address: customer.address ?? "",
+      notes: customer.notes ?? "",
+    });
+    setIsAddCustomerOpen(true);
+  };
+
+  const closeCustomerModal = () => {
+    setIsAddCustomerOpen(false);
+    setEditingCustomerId(null);
+    setCustomerForm(EMPTY_CUSTOMER_FORM);
+  };
+
+  const handleSaveCustomer = async () => {
+    if (editingCustomerId) {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          full_name: customerForm.fullName.trim(),
+          contact_number: customerForm.contactNumber.trim() || null,
+          email: customerForm.email.trim() || null,
+          address: customerForm.address.trim() || null,
+          notes: customerForm.notes.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingCustomerId);
+
+      if (error) {
+        if (error.code === "42703") {
+          return alert(
+            "Customer address or email columns are missing. Run the customer contact upgrade SQL first.",
+          );
+        }
+        alert(error.message);
+        return;
+      }
+
+      closeCustomerModal();
+      await loadRegisteredCustomers(activeBranchId);
+      return;
+    }
+
+    await handleAddCustomer();
   };
 
   if (checkingAuth) {
@@ -314,9 +383,25 @@ export default function CustomersPage() {
                     key={customer.id}
                     className="border border-slate-100 rounded-2xl p-4 bg-slate-50"
                   >
-                    <p className="font-semibold">{customer.full_name}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{customer.full_name}</p>
+                        <p className="text-sm text-slate-500">
+                          {customer.contact_number || "No contact"}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => openEditCustomer(customer)}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-white"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {customer.email || "No email"}
+                    </p>
                     <p className="text-sm text-slate-500">
-                      {customer.contact_number || "No contact"}
+                      {customer.address || "No address"}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
                       {customer.notes || "No notes"}
@@ -429,7 +514,7 @@ export default function CustomersPage() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">New Customer</h2>
                 <button
-                  onClick={() => setIsAddCustomerOpen(false)}
+                  onClick={closeCustomerModal}
                   className="p-2 hover:bg-slate-100 rounded-full"
                 >
                   <X size={20} />
@@ -438,36 +523,59 @@ export default function CustomersPage() {
               <div className="space-y-4">
                 <input
                   placeholder="Full name"
-                  value={newCustomer.fullName}
+                  value={customerForm.fullName}
                   onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, fullName: e.target.value })
+                    setCustomerForm({ ...customerForm, fullName: e.target.value })
                   }
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
                 />
                 <input
                   placeholder="Contact number"
-                  value={newCustomer.contactNumber}
+                  value={customerForm.contactNumber}
                   onChange={(e) =>
-                    setNewCustomer({
-                      ...newCustomer,
+                    setCustomerForm({
+                      ...customerForm,
                       contactNumber: e.target.value,
+                    })
+                  }
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
+                />
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={customerForm.email}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
+                />
+                <textarea
+                  placeholder="Address"
+                  value={customerForm.address}
+                  onChange={(e) =>
+                    setCustomerForm({
+                      ...customerForm,
+                      address: e.target.value,
                     })
                   }
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
                 />
                 <textarea
                   placeholder="Notes (optional)"
-                  value={newCustomer.notes}
+                  value={customerForm.notes}
                   onChange={(e) =>
-                    setNewCustomer({ ...newCustomer, notes: e.target.value })
+                    setCustomerForm({ ...customerForm, notes: e.target.value })
                   }
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
                 />
                 <button
-                  onClick={handleAddCustomer}
+                  onClick={handleSaveCustomer}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold"
                 >
-                  Save Customer
+                  {editingCustomerId ? "Update Customer" : "Save Customer"}
                 </button>
               </div>
             </div>

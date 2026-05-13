@@ -1,116 +1,82 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabaseClient";
+
+import React, { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Loader2, Plus, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, X, Loader2, Store } from "lucide-react";
 import Sidebar from "../components/sidebar";
+import { supabase } from "@/lib/supabaseClient";
+import { ModalShell } from "./components/modal-shell";
+import { InventoryTable } from "./components/inventory-table";
+import { RecentLossesTable } from "./components/recent-losses-table";
+import {
+  DEFAULT_LOSS_FORM,
+  DEFAULT_NEW_ITEM_FORM,
+  DEFAULT_VARIANT_FORM,
+} from "./constants";
+import type {
+  InventoryItem,
+  InventoryLossRow,
+  InventoryRow,
+  ProductOption,
+  RecentLossItem,
+} from "./types";
+import { buildRecentLossItems, normalizeInventoryRows } from "./utils";
 
-interface InventoryItem {
-  id: string;
-  stock: number;
-  min_stock?: number;
-  products:
-    | {
-        id: string;
-        name: string;
-        price: number;
-        cost: number;
-        barcode: string | null;
-      }
-    | null;
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return "Something went wrong.";
 }
 
-interface InventoryProduct {
-  id: string;
-  name: string;
-  price: number;
-  cost: number;
-  barcode: string | null;
-}
-
-interface InventoryRow {
-  id: string;
-  stock: number;
-  min_stock?: number;
-  products: InventoryProduct | InventoryProduct[] | null;
-}
-
-interface ProductOption {
-  id: string;
-  name: string;
-}
-
-interface RecentLossItem {
-  id: string;
-  quantity: number;
-  reason: string;
-  created_at: string;
-  item_name: string;
-  encoded_by: string;
-}
-
-interface InventoryLossRow {
-  id: string;
-  quantity: number;
-  reason: string;
-  created_at: string;
-  product_id: string | null;
-  variant_id: string | null;
-  created_by: string | null;
+function getErrorCode(error: unknown) {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return null;
 }
 
 export default function Inventory() {
   const router = useRouter();
+
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
   const [isLossModalOpen, setIsLossModalOpen] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
-  const [activeBranchName, setActiveBranchName] =
-    useState<string>("Loading branch...");
+  const [activeBranchName, setActiveBranchName] = useState("Loading branch...");
 
-  const [newItem, setNewItem] = useState({
-    name: "",
-    barcode: "",
-    stock: "",
-    price: "",
-    cost: "",
-  });
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
-  const [variantForm, setVariantForm] = useState({
-    productId: "",
-    name: "",
-    price: "",
-    barcode: "",
-    openingStock: "",
-  });
-  const [lossForm, setLossForm] = useState({
-    productId: "",
-    quantity: "",
-    reason: "",
-  });
-  const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
+  const [newItem, setNewItem] = useState(DEFAULT_NEW_ITEM_FORM);
+  const [variantForm, setVariantForm] = useState(DEFAULT_VARIANT_FORM);
+  const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
 
   const fetchInventory = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
       .from("inventory")
       .select(
         `
-      id, 
-      stock, 
-      min_stock,
-      branch_id,
-      products (
-        id, 
-        name, 
-        price, 
-        cost,
-        barcode
-      )
-    `,
+          id,
+          stock,
+          min_stock,
+          branch_id,
+          products (
+            id,
+            name,
+            price,
+            cost,
+            barcode
+          )
+        `,
       )
       .eq("branch_id", branchId)
       .order("updated_at", { ascending: false });
@@ -120,15 +86,7 @@ export default function Inventory() {
       return;
     }
 
-    if (data) {
-      const normalizedItems = (data as InventoryRow[]).map((row) => ({
-        id: row.id,
-        stock: row.stock,
-        min_stock: row.min_stock,
-        products: Array.isArray(row.products) ? (row.products[0] ?? null) : row.products,
-      }));
-      setItems(normalizedItems);
-    }
+    setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
   }, []);
 
   const loadProductOptions = useCallback(async () => {
@@ -136,10 +94,12 @@ export default function Inventory() {
       .from("products")
       .select("id, name")
       .order("name", { ascending: true });
+
     if (error) {
       console.error("Failed loading products:", error.message);
       return;
     }
+
     setProductOptions((data as ProductOption[]) ?? []);
   }, []);
 
@@ -176,6 +136,7 @@ export default function Inventory() {
         .from("products")
         .select("id, name")
         .in("id", productIds);
+
       productNameMap = new Map(
         ((productRows ?? []) as { id: string; name: string }[]).map((row) => [
           row.id,
@@ -189,6 +150,7 @@ export default function Inventory() {
         .from("product_variants")
         .select("id, name")
         .in("id", variantIds);
+
       variantNameMap = new Map(
         ((variantRows ?? []) as { id: string; name: string }[]).map((row) => [
           row.id,
@@ -202,6 +164,7 @@ export default function Inventory() {
         .from("profiles")
         .select("id, full_name")
         .in("id", encodedByIds);
+
       encodedByMap = new Map(
         ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((row) => [
           row.id,
@@ -211,20 +174,7 @@ export default function Inventory() {
     }
 
     setRecentLosses(
-      rows.map((row) => ({
-        id: row.id,
-        quantity: row.quantity,
-        reason: row.reason,
-        created_at: row.created_at,
-        item_name: row.product_id
-          ? (productNameMap.get(row.product_id) ?? "Unknown product")
-          : row.variant_id
-            ? (variantNameMap.get(row.variant_id) ?? "Unknown variant")
-            : "Unknown item",
-        encoded_by: row.created_by
-          ? (encodedByMap.get(row.created_by) ?? "Unknown user")
-          : "System",
-      })),
+      buildRecentLossItems(rows, productNameMap, variantNameMap, encodedByMap),
     );
   }, []);
 
@@ -233,6 +183,7 @@ export default function Inventory() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) {
         router.push("/auth/login");
         return;
@@ -248,6 +199,7 @@ export default function Inventory() {
         router.push("/pos");
         return;
       }
+
       setCheckingAuth(false);
 
       const { data: branches, error: branchError } = await supabase
@@ -260,38 +212,55 @@ export default function Inventory() {
         return;
       }
 
-      if (branches && branches.length > 0) {
-        setActiveBranchId(branches[0].id);
-        setActiveBranchName(branches[0].name);
-        fetchInventory(branches[0].id);
-        loadProductOptions();
-        loadRecentLosses(branches[0].id);
-      } else {
+      const branch = branches?.[0];
+      if (!branch) {
         setActiveBranchName("No Branch Found");
+        return;
       }
-    };
-    init();
-  }, [router, fetchInventory, loadProductOptions, loadRecentLosses]);
 
-  const handleAddItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeBranchId) return alert("Error: No active branch found.");
+      setActiveBranchId(branch.id);
+      setActiveBranchName(branch.name);
+      await Promise.all([
+        fetchInventory(branch.id),
+        loadProductOptions(),
+        loadRecentLosses(branch.id),
+      ]);
+    };
+
+    init();
+  }, [fetchInventory, loadProductOptions, loadRecentLosses, router]);
+
+  const handleAddItem = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!activeBranchId) {
+      alert("Error: No active branch found.");
+      return;
+    }
+
     const parsedPrice = Number.parseFloat(newItem.price);
     const parsedCost = Number.parseFloat(newItem.cost);
     const parsedStock = Number.parseInt(newItem.stock, 10);
+
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return alert("Please enter a valid price.");
+      alert("Please enter a valid price.");
+      return;
     }
+
     if (!Number.isFinite(parsedStock) || parsedStock < 0) {
-      return alert("Please enter a valid stock.");
+      alert("Please enter a valid stock.");
+      return;
     }
+
     if (!Number.isFinite(parsedCost) || parsedCost < 0) {
-      return alert("Please enter a valid unit cost.");
+      alert("Please enter a valid unit cost.");
+      return;
     }
+
     setLoading(true);
 
     try {
-      const { data: product, error: pError } = await supabase
+      const { data: product, error: productError } = await supabase
         .from("products")
         .insert([
           {
@@ -304,9 +273,9 @@ export default function Inventory() {
         .select()
         .single();
 
-      if (pError) throw pError;
+      if (productError) throw productError;
 
-      const { error: iError } = await supabase.from("inventory").insert([
+      const { error: inventoryError } = await supabase.from("inventory").insert([
         {
           product_id: product.id,
           branch_id: activeBranchId,
@@ -314,38 +283,51 @@ export default function Inventory() {
         },
       ]);
 
-      if (iError) throw iError;
+      if (inventoryError) throw inventoryError;
 
       await fetchInventory(activeBranchId);
+      setNewItem(DEFAULT_NEW_ITEM_FORM);
       setIsModalOpen(false);
-      setNewItem({ name: "", barcode: "", stock: "", price: "", cost: "" });
-    } catch (err: any) {
-      if (err?.code === "23505") {
+    } catch (error) {
+      if (getErrorCode(error) === "23505") {
         alert("Barcode already exists. Please use a unique barcode.");
         return;
       }
-      alert(err.message);
+
+      alert(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddVariant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeBranchId) return alert("No active branch found.");
-    if (!variantForm.productId || !variantForm.name.trim()) {
-      return alert("Please select a product and enter variant name.");
+  const handleAddVariant = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!activeBranchId) {
+      alert("No active branch found.");
+      return;
     }
+
+    if (!variantForm.productId || !variantForm.name.trim()) {
+      alert("Please select a product and enter variant name.");
+      return;
+    }
+
     const parsedPrice = Number.parseFloat(variantForm.price || "0");
     const parsedStock = Number.parseInt(variantForm.openingStock || "0", 10);
+
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      return alert("Please enter a valid variant price.");
+      alert("Please enter a valid variant price.");
+      return;
     }
+
     if (!Number.isFinite(parsedStock) || parsedStock < 0) {
-      return alert("Please enter a valid opening stock.");
+      alert("Please enter a valid opening stock.");
+      return;
     }
 
     setLoading(true);
+
     const { data: variant, error: variantError } = await supabase
       .from("product_variants")
       .insert([
@@ -381,55 +363,66 @@ export default function Inventory() {
       return;
     }
 
+    setVariantForm(DEFAULT_VARIANT_FORM);
     setIsVariantModalOpen(false);
-    setVariantForm({
-      productId: "",
-      name: "",
-      price: "",
-      barcode: "",
-      openingStock: "",
-    });
     setLoading(false);
     alert("Variant added successfully.");
   };
 
-  const handleLogLoss = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeBranchId) return alert("No active branch found.");
-    const qty = Number.parseInt(lossForm.quantity, 10);
-    if (!lossForm.productId) return alert("Select a product.");
-    if (!Number.isFinite(qty) || qty <= 0) {
-      return alert("Enter a valid loss quantity.");
+  const handleLogLoss = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!activeBranchId) {
+      alert("No active branch found.");
+      return;
     }
-    if (!lossForm.reason.trim()) return alert("Reason is required.");
+
+    const quantity = Number.parseInt(lossForm.quantity, 10);
+
+    if (!lossForm.productId) {
+      alert("Select a product.");
+      return;
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert("Enter a valid loss quantity.");
+      return;
+    }
+
+    if (!lossForm.reason.trim()) {
+      alert("Reason is required.");
+      return;
+    }
 
     setLoading(true);
-    const { data: inv, error: invError } = await supabase
+
+    const { data: inventoryRecord, error: inventoryError } = await supabase
       .from("inventory")
       .select("id, stock")
       .eq("branch_id", activeBranchId)
       .eq("product_id", lossForm.productId)
       .single();
 
-    if (invError || !inv) {
-      alert(invError?.message || "Inventory item not found.");
-      setLoading(false);
-      return;
-    }
-    if (inv.stock < qty) {
-      alert(`Not enough stock. Available: ${inv.stock}`);
+    if (inventoryError || !inventoryRecord) {
+      alert(inventoryError?.message || "Inventory item not found.");
       setLoading(false);
       return;
     }
 
-    const { data: userRes } = await supabase.auth.getUser();
-    const userId = userRes.user?.id ?? null;
+    if (inventoryRecord.stock < quantity) {
+      alert(`Not enough stock. Available: ${inventoryRecord.stock}`);
+      setLoading(false);
+      return;
+    }
+
+    const { data: userResult } = await supabase.auth.getUser();
+    const userId = userResult.user?.id ?? null;
 
     const { error: lossError } = await supabase.from("inventory_losses").insert([
       {
         branch_id: activeBranchId,
         product_id: lossForm.productId,
-        quantity: qty,
+        quantity,
         reason: lossForm.reason.trim(),
         created_by: userId,
       },
@@ -444,10 +437,10 @@ export default function Inventory() {
     const { error: updateError } = await supabase
       .from("inventory")
       .update({
-        stock: inv.stock - qty,
+        stock: inventoryRecord.stock - quantity,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", inv.id);
+      .eq("id", inventoryRecord.id);
 
     if (updateError) {
       alert(updateError.message);
@@ -455,408 +448,265 @@ export default function Inventory() {
       return;
     }
 
+    setLossForm(DEFAULT_LOSS_FORM);
     setIsLossModalOpen(false);
-    setLossForm({ productId: "", quantity: "", reason: "" });
     setLoading(false);
-    await fetchInventory(activeBranchId);
-    await loadRecentLosses(activeBranchId);
+
+    await Promise.all([
+      fetchInventory(activeBranchId),
+      loadRecentLosses(activeBranchId),
+    ]);
   };
 
-  if (checkingAuth)
+  if (checkingAuth) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-blue-600 h-10 w-10" />
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
       </div>
     );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       <Sidebar />
 
       <main className="flex-1 overflow-y-auto p-6 md:p-10">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <header className="mb-10 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
             <button
               onClick={() => router.push("/pos")}
-              className="flex items-center gap-2 text-blue-600 font-medium mb-2 hover:underline"
+              className="mb-2 flex items-center gap-2 font-medium text-blue-600 hover:underline"
             >
               <ArrowLeft size={18} /> Back to Dashboard
             </button>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="bg-emerald-100 text-emerald-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
                 <Store size={10} /> {activeBranchName}
               </span>
             </div>
             <h1 className="text-3xl font-bold">Inventory List</h1>
-            <p className="text-slate-500">
-              Managing stock for {activeBranchName}
-            </p>
+            <p className="text-slate-500">Managing stock for {activeBranchName}</p>
           </div>
 
-          {/* This button should now trigger the modal below */}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-blue-100"
-          >
-            <Plus size={20} /> Add Product
-          </button>
-          <button
-            onClick={() => setIsVariantModalOpen(true)}
-            className="bg-violet-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-violet-100"
-          >
-            <Plus size={20} /> Add Variant
-          </button>
-          <button
-            onClick={() => setIsLossModalOpen(true)}
-            className="bg-rose-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-xl shadow-rose-100"
-          >
-            <Plus size={20} /> Log Loss
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white shadow-xl shadow-blue-100 transition-all hover:scale-105"
+            >
+              <Plus size={20} /> Add Product
+            </button>
+            <button
+              onClick={() => setIsVariantModalOpen(true)}
+              className="flex items-center gap-2 rounded-2xl bg-violet-600 px-6 py-3 font-bold text-white shadow-xl shadow-violet-100 transition-all hover:scale-105"
+            >
+              <Plus size={20} /> Add Variant
+            </button>
+            <button
+              onClick={() => setIsLossModalOpen(true)}
+              className="flex items-center gap-2 rounded-2xl bg-rose-600 px-6 py-3 font-bold text-white shadow-xl shadow-rose-100 transition-all hover:scale-105"
+            >
+              <Plus size={20} /> Log Loss
+            </button>
+          </div>
         </header>
 
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50/50 text-slate-400 uppercase text-xs font-semibold">
-              <tr>
-                <th className="px-8 py-5">Product Name</th>
-                <th className="px-8 py-5">Barcode</th>
-                <th className="px-8 py-5">Current Stock</th>
-                <th className="px-8 py-5">Unit Cost</th>
-                <th className="px-8 py-5">Price</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {items.length > 0 ? (
-                items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-slate-50/50 transition-colors"
-                  >
-                    <td className="px-8 py-5 font-bold">
-                      {item.products?.name || "Unknown"}
-                    </td>
-                    <td className="px-8 py-5 text-slate-500 font-medium">
-                      {item.products?.barcode || "-"}
-                    </td>
-                    <td className="px-8 py-5 font-medium">
-                      <span
-                        className={
-                          item.stock <= (item.min_stock ?? 0)
-                            ? "text-rose-600 font-bold"
-                            : ""
-                        }
-                      >
-                        {item.stock}
-                      </span>
-                    </td>
-                    <td className="px-8 py-5 text-amber-600 font-bold">
-                      ₱{item.products?.cost?.toFixed(2)}
-                    </td>
-                    <td className="px-8 py-5 text-emerald-600 font-bold">
-                      ₱{item.products?.price?.toFixed(2)}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-8 py-10 text-center text-slate-400"
-                  >
-                    No products found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <section className="mt-8 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-8 py-6 border-b border-slate-100">
-            <h2 className="text-lg font-bold">Recent Loss Logs</h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Latest inventory items logged as damaged, expired, or missing.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50/50 text-slate-400 uppercase text-xs font-semibold">
-                <tr>
-                  <th className="px-8 py-4">Item</th>
-                  <th className="px-8 py-4">Quantity</th>
-                  <th className="px-8 py-4">Reason</th>
-                  <th className="px-8 py-4">Encoded By</th>
-                  <th className="px-8 py-4">Transaction Date & Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {recentLosses.length > 0 ? (
-                  recentLosses.map((loss) => (
-                    <tr key={loss.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-8 py-4 font-semibold">{loss.item_name}</td>
-                      <td className="px-8 py-4 text-rose-600 font-bold">
-                        -{loss.quantity}
-                      </td>
-                      <td className="px-8 py-4 text-slate-600">{loss.reason}</td>
-                      <td className="px-8 py-4 text-slate-600 font-medium">
-                        {loss.encoded_by}
-                      </td>
-                      <td className="px-8 py-4 text-slate-500">
-                        {new Date(loss.created_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-8 py-10 text-center text-slate-400">
-                      No recent loss logs found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <InventoryTable items={items} />
+        <RecentLossesTable recentLosses={recentLosses} />
       </main>
 
-      {/* --- MISSING MODAL CODE FIXED BELOW --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">New Product</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full"
-              >
-                <X size={20} />
-              </button>
+        <ModalShell title="New Product" onClose={() => setIsModalOpen(false)}>
+          <form onSubmit={handleAddItem} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Product Name
+              </label>
+              <input
+                required
+                placeholder="Enter name"
+                value={newItem.name}
+                onChange={(event) => setNewItem({ ...newItem, name: event.target.value })}
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
             </div>
-
-            <form onSubmit={handleAddItem} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Barcode
+              </label>
+              <input
+                required
+                placeholder="Scan or type barcode"
+                value={newItem.barcode}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, barcode: event.target.value })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="text-sm font-bold text-slate-500 mb-1 block">
-                  Product Name
+                <label className="mb-1 block text-sm font-bold text-slate-500">
+                  Unit Cost (PHP)
                 </label>
                 <input
                   required
-                  placeholder="Enter name"
-                  value={newItem.name}
-                  onChange={(e) =>
-                    setNewItem({ ...newItem, name: e.target.value })
-                  }
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                  type="number"
+                  step="0.01"
+                  value={newItem.cost}
+                  onChange={(event) => setNewItem({ ...newItem, cost: event.target.value })}
+                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
               <div>
-                <label className="text-sm font-bold text-slate-500 mb-1 block">
-                  Barcode
+                <label className="mb-1 block text-sm font-bold text-slate-500">
+                  Price (PHP)
                 </label>
                 <input
                   required
-                  placeholder="Scan or type barcode"
-                  value={newItem.barcode}
-                  onChange={(e) =>
-                    setNewItem({ ...newItem, barcode: e.target.value })
+                  type="number"
+                  step="0.01"
+                  value={newItem.price}
+                  onChange={(event) =>
+                    setNewItem({ ...newItem, price: event.target.value })
                   }
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
+                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm font-bold text-slate-500 mb-1 block">
-                    Unit Cost (₱)
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    value={newItem.cost}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, cost: e.target.value })
-                    }
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-bold text-slate-500 mb-1 block">
-                    Price (₱)
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    step="0.01"
-                    value={newItem.price}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, price: e.target.value })
-                    }
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-bold text-slate-500 mb-1 block">
-                    Stock
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    value={newItem.stock}
-                    onChange={(e) =>
-                      setNewItem({ ...newItem, stock: e.target.value })
-                    }
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-500">
+                  Stock
+                </label>
+                <input
+                  required
+                  type="number"
+                  value={newItem.stock}
+                  onChange={(event) =>
+                    setNewItem({ ...newItem, stock: event.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+                />
               </div>
-              <button
-                disabled={loading}
-                type="submit"
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition flex items-center justify-center"
-              >
-                {loading ? (
-                  <Loader2 className="animate-spin mr-2" size={20} />
-                ) : (
-                  "Save Product"
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
+            </div>
+            <button
+              disabled={loading}
+              type="submit"
+              className="flex w-full items-center justify-center rounded-2xl bg-blue-600 py-4 font-bold text-white transition hover:bg-blue-700"
+            >
+              {loading ? <Loader2 className="mr-2 animate-spin" size={20} /> : "Save Product"}
+            </button>
+          </form>
+        </ModalShell>
       )}
 
       {isVariantModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Add Variant</h2>
-              <button
-                onClick={() => setIsVariantModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleAddVariant} className="space-y-4">
-              <select
-                required
-                value={variantForm.productId}
-                onChange={(e) =>
-                  setVariantForm({ ...variantForm, productId: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              >
-                <option value="">Select base product</option>
-                {productOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                required
-                placeholder="Variant name (e.g. 16GB RAM)"
-                value={variantForm.name}
-                onChange={(e) =>
-                  setVariantForm({ ...variantForm, name: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Variant price"
-                value={variantForm.price}
-                onChange={(e) =>
-                  setVariantForm({ ...variantForm, price: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <input
-                placeholder="Variant barcode (optional)"
-                value={variantForm.barcode}
-                onChange={(e) =>
-                  setVariantForm({ ...variantForm, barcode: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <input
-                type="number"
-                placeholder="Opening stock"
-                value={variantForm.openingStock}
-                onChange={(e) =>
-                  setVariantForm({ ...variantForm, openingStock: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <button
-                disabled={loading}
-                type="submit"
-                className="w-full py-4 bg-violet-600 text-white rounded-2xl font-bold"
-              >
-                {loading ? "Saving..." : "Save Variant"}
-              </button>
-            </form>
-          </div>
-        </div>
+        <ModalShell title="Add Variant" onClose={() => setIsVariantModalOpen(false)}>
+          <form onSubmit={handleAddVariant} className="space-y-4">
+            <select
+              required
+              value={variantForm.productId}
+              onChange={(event) =>
+                setVariantForm({ ...variantForm, productId: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            >
+              <option value="">Select base product</option>
+              {productOptions.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+            <input
+              required
+              placeholder="Variant name (e.g. 16GB RAM)"
+              value={variantForm.name}
+              onChange={(event) =>
+                setVariantForm({ ...variantForm, name: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Variant price"
+              value={variantForm.price}
+              onChange={(event) =>
+                setVariantForm({ ...variantForm, price: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <input
+              placeholder="Variant barcode (optional)"
+              value={variantForm.barcode}
+              onChange={(event) =>
+                setVariantForm({ ...variantForm, barcode: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <input
+              type="number"
+              placeholder="Opening stock"
+              value={variantForm.openingStock}
+              onChange={(event) =>
+                setVariantForm({ ...variantForm, openingStock: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <button
+              disabled={loading}
+              type="submit"
+              className="w-full rounded-2xl bg-violet-600 py-4 font-bold text-white"
+            >
+              {loading ? "Saving..." : "Save Variant"}
+            </button>
+          </form>
+        </ModalShell>
       )}
 
       {isLossModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Log Inventory Loss</h2>
-              <button
-                onClick={() => setIsLossModalOpen(false)}
-                className="p-2 hover:bg-slate-100 rounded-full"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleLogLoss} className="space-y-4">
-              <select
-                required
-                value={lossForm.productId}
-                onChange={(e) =>
-                  setLossForm({ ...lossForm, productId: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              >
-                <option value="">Select product</option>
-                {productOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <input
-                required
-                type="number"
-                placeholder="Loss quantity"
-                value={lossForm.quantity}
-                onChange={(e) =>
-                  setLossForm({ ...lossForm, quantity: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <textarea
-                required
-                placeholder="Reason (damaged, expired, missing, etc.)"
-                value={lossForm.reason}
-                onChange={(e) =>
-                  setLossForm({ ...lossForm, reason: e.target.value })
-                }
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl"
-              />
-              <button
-                disabled={loading}
-                type="submit"
-                className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold"
-              >
-                {loading ? "Saving..." : "Save Loss Record"}
-              </button>
-            </form>
-          </div>
-        </div>
+        <ModalShell title="Log Inventory Loss" onClose={() => setIsLossModalOpen(false)}>
+          <form onSubmit={handleLogLoss} className="space-y-4">
+            <select
+              required
+              value={lossForm.productId}
+              onChange={(event) =>
+                setLossForm({ ...lossForm, productId: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            >
+              <option value="">Select product</option>
+              {productOptions.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+            <input
+              required
+              type="number"
+              placeholder="Loss quantity"
+              value={lossForm.quantity}
+              onChange={(event) =>
+                setLossForm({ ...lossForm, quantity: event.target.value })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <textarea
+              required
+              placeholder="Reason (damaged, expired, missing, etc.)"
+              value={lossForm.reason}
+              onChange={(event) => setLossForm({ ...lossForm, reason: event.target.value })}
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <button
+              disabled={loading}
+              type="submit"
+              className="w-full rounded-2xl bg-rose-600 py-4 font-bold text-white"
+            >
+              {loading ? "Saving..." : "Save Loss Record"}
+            </button>
+          </form>
+        </ModalShell>
       )}
     </div>
   );
