@@ -61,34 +61,38 @@ export default function CustomersPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
-  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(
+    null,
+  );
   const [customerFeatureReady, setCustomerFeatureReady] = useState(true);
   const [registeredCustomers, setRegisteredCustomers] = useState<
     RegisteredCustomer[]
   >([]);
-  const [customerForm, setCustomerForm] = useState<CustomerFormState>(
-    EMPTY_CUSTOMER_FORM,
-  );
+  const [customerForm, setCustomerForm] =
+    useState<CustomerFormState>(EMPTY_CUSTOMER_FORM);
 
-  const loadRegisteredCustomers = useCallback(async (branchId: string | null) => {
-    if (!branchId) return;
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, full_name, contact_number, email, address, notes")
-      .eq("branch_id", branchId)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    if (error) {
-      if (error.code === "42P01") {
-        setCustomerFeatureReady(false);
+  const loadRegisteredCustomers = useCallback(
+    async (branchId: string | null) => {
+      if (!branchId) return;
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, full_name, contact_number, email, address, notes")
+        .eq("branch_id", branchId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) {
+        if (error.code === "42P01") {
+          setCustomerFeatureReady(false);
+          return;
+        }
+        alert(error.message);
         return;
       }
-      alert(error.message);
-      return;
-    }
-    setCustomerFeatureReady(true);
-    setRegisteredCustomers((data as RegisteredCustomer[]) ?? []);
-  }, []);
+      setCustomerFeatureReady(true);
+      setRegisteredCustomers((data as RegisteredCustomer[]) ?? []);
+    },
+    [],
+  );
 
   const syncOverdueStatuses = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -173,7 +177,8 @@ export default function CustomersPage() {
         target.unpaid_count += 1;
         if (
           row.promise_to_pay_date &&
-          (!target.next_due_date || row.promise_to_pay_date < target.next_due_date)
+          (!target.next_due_date ||
+            row.promise_to_pay_date < target.next_due_date)
         ) {
           target.next_due_date = row.promise_to_pay_date;
         }
@@ -258,7 +263,8 @@ export default function CustomersPage() {
       branchId = branch?.id ?? null;
       if (branchId) setActiveBranchId(branchId);
     }
-    if (!branchId) return alert("No branch found. Please create a branch first.");
+    if (!branchId)
+      return alert("No branch found. Please create a branch first.");
 
     if (!customerForm.fullName.trim()) {
       return alert("Customer name is required.");
@@ -448,14 +454,19 @@ export default function CustomersPage() {
               <tbody className="divide-y divide-slate-100">
                 {!loading && customers.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
+                    <td
+                      colSpan={6}
+                      className="px-6 py-10 text-center text-slate-400"
+                    >
                       No customers with unpaid credit.
                     </td>
                   </tr>
                 )}
                 {customers.map((customer) => (
                   <tr key={customer.key} className="hover:bg-slate-50/60">
-                    <td className="px-6 py-4 font-semibold">{customer.customer_name}</td>
+                    <td className="px-6 py-4 font-semibold">
+                      {customer.customer_name}
+                    </td>
                     <td className="px-6 py-4 text-sm text-slate-600">
                       {customer.contact_number || "-"}
                     </td>
@@ -525,7 +536,10 @@ export default function CustomersPage() {
                   placeholder="Full name"
                   value={customerForm.fullName}
                   onChange={(e) =>
-                    setCustomerForm({ ...customerForm, fullName: e.target.value })
+                    setCustomerForm({
+                      ...customerForm,
+                      fullName: e.target.value,
+                    })
                   }
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl"
                 />
@@ -585,4 +599,3 @@ export default function CustomersPage() {
     </div>
   );
 }
-

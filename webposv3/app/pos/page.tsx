@@ -3,7 +3,15 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { Eye, Loader2, MoreVertical, Plus, Printer, Search, X } from "lucide-react";
+import {
+  Eye,
+  Loader2,
+  MoreVertical,
+  Plus,
+  Printer,
+  Search,
+  X,
+} from "lucide-react";
 import Sidebar from "../components/sidebar";
 
 // --- Types ---
@@ -77,13 +85,16 @@ interface SaleDetailLineItem {
   line_subtotal: number;
   unit_cost: number | null;
   note: string | null;
-  products: {
-    name: string;
-    barcode: string | null;
-  } | {
-    name: string;
-    barcode: string | null;
-  }[] | null;
+  products:
+    | {
+        name: string;
+        barcode: string | null;
+      }
+    | {
+        name: string;
+        barcode: string | null;
+      }[]
+    | null;
 }
 
 interface SaleDetail {
@@ -96,11 +107,15 @@ interface SaleDetail {
   discount_amount: number | null;
   tax: number | null;
   notes: string | null;
-  payments: {
-    method: string | null;
-    amount: number;
-    status: string | null;
-  }[] | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  payments:
+    | {
+        method: string | null;
+        amount: number;
+        status: string | null;
+      }[]
+    | null;
   cashier_profile?:
     | {
         full_name: string | null;
@@ -109,6 +124,16 @@ interface SaleDetail {
         full_name: string | null;
       }[]
     | null;
+  voided_by_profile: {
+    full_name: string | null;
+  } | null;
+  restored_items: Array<{
+    id: string;
+    productName: string;
+    quantity: number;
+    created_at: string;
+    note: string | null;
+  }>;
   items: Array<{
     id: string;
     productName: string;
@@ -142,7 +167,6 @@ export default function POSDashboard() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [revenue, setRevenue] = useState(0);
   const [totalProducts, setTotalProducts] = useState(0);
-  const [totalUsers, setTotalUsers] = useState(0);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [todaySales, setTodaySales] = useState(0);
   const [todaySalesCount, setTodaySalesCount] = useState(0);
@@ -150,7 +174,6 @@ export default function POSDashboard() {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<"admin" | "cashier">("cashier");
-  const [loading, setLoading] = useState(true);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submittingSale, setSubmittingSale] = useState(false);
@@ -170,73 +193,19 @@ export default function POSDashboard() {
   const [dueCreditAlerts, setDueCreditAlerts] = useState<CustomerCredit[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
   const [change, setchange] = useState<number>(0);
-  const [selectedSaleDetail, setSelectedSaleDetail] = useState<SaleDetail | null>(
-    null,
-  );
+  const [selectedSaleDetail, setSelectedSaleDetail] =
+    useState<SaleDetail | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   //payment  states
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [cashAmount, setCashAmount] = useState<string>("");
 
-  // --- 1. Auth & Initial Data ---
-  useEffect(() => {
-    const init = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        router.push("/auth/login");
-        return;
-      }
-      setCurrentUserId(session.user.id);
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, is_approved")
-        .eq("id", session.user.id)
-        .single();
-      if (profile?.role === "cashier" && profile?.is_approved === false) {
-        await supabase.auth.signOut();
-        alert("Your cashier account is pending admin approval.");
-        router.push("/auth/login");
-        return;
-      }
-      if (profile?.role === "admin" || profile?.role === "cashier") {
-        setUserRole(profile.role);
-      }
-
-      // Fetch a valid branch ID for new sales
-      const { data: branch } = await supabase
-        .from("branches")
-        .select("id")
-        .limit(1)
-        .single();
-      if (branch) setActiveBranchId(branch.id);
-
-      setCheckingAuth(false);
-    };
-    init();
-  }, [router]);
-
-  // --- 2. Fetch All Dashboard Metrics ---
-  const getDashboardData = useCallback(async () => {
-    if (checkingAuth) return;
-    setLoading(true);
-
+  const refreshDashboardData = useCallback(async () => {
     try {
-      // Fetch Total Products Count
       const { count: pCount } = await supabase
         .from("products")
         .select("*", { count: "exact", head: true });
 
-      // Fetch Total Users Count (from profiles table)
-      const { count: uCount } = await supabase
-        .from("profiles")
-        .select("*", { count: "exact", head: true });
-
-      // Fetch Low Stock Count (Items < 10)
       const { count: lCount } = await supabase
         .from("inventory")
         .select("*", { count: "exact", head: true })
@@ -259,7 +228,6 @@ export default function POSDashboard() {
         .order("stock", { ascending: true })
         .limit(8);
 
-      // Fetch Sales for Revenue Calculation & Table
       const { data: salesData, error: salesError } = await supabase
         .from("sales")
         .select("id, total, created_at, receipt_no, status, user_id")
@@ -270,9 +238,7 @@ export default function POSDashboard() {
         console.error("Failed to fetch sales:", salesError.message);
       }
 
-      // Update States
       if (pCount !== null) setTotalProducts(pCount);
-      if (uCount !== null) setTotalUsers(uCount);
       if (lCount !== null) setLowStockCount(lCount);
       if (lowStockData) {
         const normalizedLowStock = (
@@ -358,22 +324,21 @@ export default function POSDashboard() {
               : null,
           })),
         );
+
         const completedSales = salesData.filter(
-          (s) => s.status === "completed",
+          (sale) => sale.status === "completed",
         );
-        const totalRev = completedSales.reduce(
-          (acc, s) => acc + Number(s.total),
-          0,
+        setRevenue(
+          completedSales.reduce((acc, sale) => acc + Number(sale.total), 0),
         );
-        setRevenue(totalRev);
 
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
         const todayCompleted = completedSales.filter(
-          (s) => new Date(s.created_at) >= startOfDay,
+          (sale) => new Date(sale.created_at) >= startOfDay,
         );
         setTodaySales(
-          todayCompleted.reduce((acc, s) => acc + Number(s.total), 0),
+          todayCompleted.reduce((acc, sale) => acc + Number(sale.total), 0),
         );
         setTodaySalesCount(todayCompleted.length);
       } else {
@@ -414,14 +379,50 @@ export default function POSDashboard() {
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
     }
-  }, [checkingAuth]);
+  }, []);
 
+  // --- 1. Auth & Initial Data ---
   useEffect(() => {
-    getDashboardData();
-  }, [getDashboardData]);
+    const init = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.push("/auth/login");
+        return;
+      }
+      setCurrentUserId(session.user.id);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, is_approved")
+        .eq("id", session.user.id)
+        .single();
+      if (profile?.role === "cashier" && profile?.is_approved === false) {
+        await supabase.auth.signOut();
+        alert("Your cashier account is pending admin approval.");
+        router.push("/auth/login");
+        return;
+      }
+      if (profile?.role === "admin" || profile?.role === "cashier") {
+        setUserRole(profile.role);
+      }
+
+      // Fetch a valid branch ID for new sales
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("id")
+        .limit(1)
+        .single();
+      if (branch) setActiveBranchId(branch.id);
+
+      setCheckingAuth(false);
+      await refreshDashboardData();
+    };
+    init();
+  }, [refreshDashboardData, router]);
 
   // --- 3. Actions ---
   const loadCatalogItems = useCallback(async () => {
@@ -477,9 +478,10 @@ export default function POSDashboard() {
     setCatalogItems(items);
   }, [activeBranchId]);
 
-  useEffect(() => {
-    if (isModalOpen) loadCatalogItems();
-  }, [isModalOpen, loadCatalogItems]);
+  const openNewSaleModal = async () => {
+    setIsModalOpen(true);
+    await loadCatalogItems();
+  };
 
   const addItemToCart = (item: ProductCatalogItem) => {
     setCart((current) => {
@@ -566,7 +568,6 @@ export default function POSDashboard() {
       }
     }
 
-    const receiptNo = `RCPT-${Date.now()}`;
     const { data: saleData, error } = await supabase
       .from("sales")
       .insert([
@@ -575,7 +576,6 @@ export default function POSDashboard() {
           subtotal: cartSubtotal,
           net_total: cartSubtotal,
           status: "completed",
-          receipt_no: receiptNo,
           branch_id: activeBranchId,
           user_id: currentUserId,
         },
@@ -585,6 +585,21 @@ export default function POSDashboard() {
 
     if (error || !saleData) {
       alert(error?.message || "Failed creating sale.");
+      setSubmittingSale(false);
+      return;
+    }
+
+    const receiptNo = `RCPT-${saleData.id.slice(0, 8).toUpperCase()}`;
+    const { error: receiptUpdateError } = await supabase
+      .from("sales")
+      .update({
+        receipt_no: receiptNo,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", saleData.id);
+
+    if (receiptUpdateError) {
+      alert(receiptUpdateError.message);
       setSubmittingSale(false);
       return;
     }
@@ -647,7 +662,7 @@ export default function POSDashboard() {
     setCart([]);
     setItemSearch("");
     setBarcodeInput("");
-    await getDashboardData();
+    await refreshDashboardData();
     setSubmittingSale(false);
   };
   const filteredCatalogItems = catalogItems.filter((item) => {
@@ -704,7 +719,7 @@ export default function POSDashboard() {
     setCreditNote("");
     setPromiseToPayDate("");
     setSubmittingCredit(false);
-    await getDashboardData();
+    await refreshDashboardData();
   };
 
   const handleVoidSale = async (saleId: string) => {
@@ -775,7 +790,9 @@ export default function POSDashboard() {
       for (const item of saleItems) {
         const inventoryRecord = inventoryMap.get(item.product_id);
         if (!inventoryRecord) {
-          alert("Unable to restore inventory because a stock record is missing.");
+          alert(
+            "Unable to restore inventory because a stock record is missing.",
+          );
           return;
         }
 
@@ -832,7 +849,7 @@ export default function POSDashboard() {
       alert(error.message);
       return;
     }
-    await getDashboardData();
+    await refreshDashboardData();
   };
 
   const viewSaleDetails = async (sale: Sale) => {
@@ -851,6 +868,9 @@ export default function POSDashboard() {
         discount_amount,
         tax,
         notes,
+        voided_at,
+        voided_by,
+        void_reason,
         cashier_profile:profiles!sales_user_id_fkey (
           full_name
         ),
@@ -869,6 +889,13 @@ export default function POSDashboard() {
       setDetailsLoading(false);
       return;
     }
+
+    const saleRow = saleData as Omit<
+      SaleDetail,
+      "items" | "restored_items" | "voided_by_profile"
+    > & {
+      voided_by: string | null;
+    };
 
     const { data: saleItemsData, error: saleItemsError } = await supabase
       .from("sale_items")
@@ -896,25 +923,101 @@ export default function POSDashboard() {
       return;
     }
 
-    const items = ((saleItemsData ?? []) as SaleDetailLineItem[]).map((item) => {
-      const product = Array.isArray(item.products)
-        ? (item.products[0] ?? null)
-        : item.products;
+    const items = ((saleItemsData ?? []) as SaleDetailLineItem[]).map(
+      (item) => {
+        const product = Array.isArray(item.products)
+          ? (item.products[0] ?? null)
+          : item.products;
 
-      return {
-        id: item.id,
-        productName: product?.name || "Unknown item",
-        barcode: product?.barcode ?? null,
-        quantity: Number(item.quantity ?? 0),
-        price: Number(item.price ?? 0),
-        unit_cost: item.unit_cost,
-        line_subtotal: Number(item.line_subtotal ?? 0),
-        note: item.note,
-      };
-    });
+        return {
+          id: item.id,
+          productName: product?.name || "Unknown item",
+          barcode: product?.barcode ?? null,
+          quantity: Number(item.quantity ?? 0),
+          price: Number(item.price ?? 0),
+          unit_cost: item.unit_cost,
+          line_subtotal: Number(item.line_subtotal ?? 0),
+          note: item.note,
+        };
+      },
+    );
+
+    let voidedByProfile: SaleDetail["voided_by_profile"] = null;
+    if (saleRow.voided_by) {
+      const { data: voidedByData } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", saleRow.voided_by)
+        .single();
+
+      voidedByProfile =
+        ((voidedByData ?? null) as { full_name: string | null } | null) ?? null;
+    }
+
+    let restoredItems: SaleDetail["restored_items"] = [];
+    if (sale.status === "void") {
+      const { data: restoredRows, error: restoredError } = await supabase
+        .from("stock_movements")
+        .select("id, product_id, quantity, created_at, note")
+        .eq("reference_type", "sale")
+        .eq("reference_id", sale.id)
+        .eq("movement_type", "void_restore")
+        .order("created_at", { ascending: true });
+
+      if (restoredError) {
+        alert(restoredError.message);
+        setDetailsLoading(false);
+        return;
+      }
+
+      const restoredProductIds = Array.from(
+        new Set(
+          ((restoredRows ?? []) as { product_id: string | null }[])
+            .map((row) => row.product_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      let restoredProductMap = new Map<string, string>();
+      if (restoredProductIds.length > 0) {
+        const { data: restoredProducts } = await supabase
+          .from("products")
+          .select("id, name")
+          .in("id", restoredProductIds);
+
+        restoredProductMap = new Map(
+          ((restoredProducts ?? []) as { id: string; name: string }[]).map(
+            (row) => [row.id, row.name],
+          ),
+        );
+      }
+
+      restoredItems = (
+        (restoredRows ?? []) as {
+          id: string;
+          product_id: string | null;
+          quantity: number;
+          created_at: string;
+          note: string | null;
+        }[]
+      ).map((row) => ({
+        id: row.id,
+        productName: row.product_id
+          ? (restoredProductMap.get(row.product_id) ?? "Unknown item")
+          : "Unknown item",
+        quantity: Number(row.quantity ?? 0),
+        created_at: row.created_at,
+        note: row.note,
+      }));
+    }
 
     setSelectedSaleDetail({
-      ...(saleData as Omit<SaleDetail, "items">),
+      ...(saleRow as Omit<
+        SaleDetail,
+        "items" | "restored_items" | "voided_by_profile"
+      >),
+      voided_by_profile: voidedByProfile,
+      restored_items: restoredItems,
       items,
     });
     setDetailsLoading(false);
@@ -930,11 +1033,13 @@ export default function POSDashboard() {
       (Array.isArray(sale.cashier_profile)
         ? sale.cashier_profile[0]?.full_name
         : sale.cashier_profile?.full_name) || "-";
+    const voidedByName = sale.voided_by_profile?.full_name || "-";
     const paymentSummary =
       sale.payments && sale.payments.length > 0
         ? sale.payments
-            .map((payment) =>
-              `${payment.method || "Unknown"} - ${pesoFormatter.format(Number(payment.amount ?? 0))}`,
+            .map(
+              (payment) =>
+                `${payment.method || "Unknown"} ${pesoFormatter.format(Number(payment.amount ?? 0))}`,
             )
             .join("<br />")
         : "No payments recorded";
@@ -961,31 +1066,64 @@ export default function POSDashboard() {
       <html>
         <head>
           <title>Transaction ${sale.receipt_no || sale.id}</title>
+          <style>
+            body { font-family: "Courier New", monospace; color: #111827; margin: 0; padding: 24px; background: #f8fafc; }
+            .receipt { width: 360px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; padding: 20px; }
+            .center { text-align: center; }
+            .muted { color: #64748b; font-size: 12px; }
+            .divider { border-top: 1px dashed #94a3b8; margin: 12px 0; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { padding: 4px 0; vertical-align: top; }
+            th { text-align: left; }
+            .right { text-align: right; }
+            .summary-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 12px; gap: 12px; }
+            .total { font-weight: 700; font-size: 14px; }
+          </style>
         </head>
-        <body style="font-family:Arial,sans-serif;padding:24px;color:#0f172a;">
-          <h1 style="margin-bottom:8px;">Transaction Details</h1>
-          <p><strong>Receipt:</strong> ${sale.receipt_no || "-"}</p>
-          <p><strong>Sale ID:</strong> ${sale.id}</p>
-          <p><strong>Date & Time:</strong> ${new Date(sale.created_at).toLocaleString()}</p>
-          <p><strong>Cashier:</strong> ${cashierName}</p>
-          <p><strong>Status:</strong> ${sale.status}</p>
-          <p><strong>Payments:</strong><br />${paymentSummary}</p>
-          <table style="width:100%;border-collapse:collapse;margin-top:16px;">
-            <thead>
-              <tr>
-                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Item</th>
-                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Qty</th>
-                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Price</th>
-                <th style="text-align:left;padding:8px;border-bottom:2px solid #cbd5e1;">Total</th>
-              </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-          </table>
-          <div style="margin-top:24px;">
-            <p><strong>Subtotal:</strong> ${pesoFormatter.format(Number(sale.subtotal ?? sale.total))}</p>
-            <p><strong>Discount:</strong> ${pesoFormatter.format(Number(sale.discount_amount ?? 0))}</p>
-            <p><strong>Tax:</strong> ${pesoFormatter.format(Number(sale.tax ?? 0))}</p>
-            <p><strong>Total:</strong> ${pesoFormatter.format(Number(sale.total ?? 0))}</p>
+        <body>
+          <div class="receipt">
+            <div class="center">
+              <h2 style="margin:0;">WEBPOS</h2>
+              <div class="muted">Transaction Receipt</div>
+            </div>
+            <div class="divider"></div>
+            <div class="summary-row"><span>Receipt</span><span>${sale.receipt_no || "-"}</span></div>
+            <div class="summary-row"><span>Sale ID</span><span>${sale.id.slice(0, 8)}</span></div>
+            <div class="summary-row"><span>Date</span><span>${new Date(sale.created_at).toLocaleString()}</span></div>
+            <div class="summary-row"><span>Cashier</span><span>${cashierName}</span></div>
+            <div class="summary-row"><span>Status</span><span>${sale.status.toUpperCase()}</span></div>
+            ${
+              sale.status === "void"
+                ? `
+            <div class="summary-row"><span>Voided At</span><span>${sale.voided_at ? new Date(sale.voided_at).toLocaleString() : "-"}</span></div>
+            <div class="summary-row"><span>Voided By</span><span>${voidedByName}</span></div>
+            `
+                : ""
+            }
+            <div class="divider"></div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="right">Qty</th>
+                  <th class="right">Amt</th>
+                </tr>
+              </thead>
+              <tbody>${itemRows}</tbody>
+            </table>
+            <div class="divider"></div>
+            <div class="summary-row"><span>Payments</span><span></span></div>
+            <div class="muted">${paymentSummary}</div>
+            <div class="divider"></div>
+            <div class="summary-row"><span>Subtotal</span><span>${pesoFormatter.format(Number(sale.subtotal ?? sale.total))}</span></div>
+            <div class="summary-row"><span>Discount</span><span>${pesoFormatter.format(Number(sale.discount_amount ?? 0))}</span></div>
+            <div class="summary-row"><span>Tax</span><span>${pesoFormatter.format(Number(sale.tax ?? 0))}</span></div>
+            <div class="summary-row total"><span>Total</span><span>${pesoFormatter.format(Number(sale.total ?? 0))}</span></div>
+            ${
+              sale.notes
+                ? `<div class="divider"></div><div class="muted">Note: ${sale.notes}</div>`
+                : ""
+            }
           </div>
         </body>
       </html>
@@ -1005,7 +1143,7 @@ export default function POSDashboard() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      <Sidebar onNewSaleClick={() => setIsModalOpen(true)} />
+      <Sidebar onNewSaleClick={openNewSaleModal} />
 
       <main className="flex-1 overflow-y-auto p-6 md:p-10">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
@@ -1014,7 +1152,7 @@ export default function POSDashboard() {
             <p className="text-slate-500 mt-1">Real-time performance metrics</p>
           </div>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={openNewSaleModal}
             className="w-full md:w-auto px-6 py-3 rounded-2xl font-bold bg-blue-600 text-white shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2"
           >
             <Plus size={20} /> New Sale
@@ -1125,7 +1263,7 @@ export default function POSDashboard() {
                             <Eye size={14} />
                             Details
                           </button>
-                          {sale.status !== "void" ? (
+                          {sale.status !== "void" && userRole === "admin" ? (
                             <button
                               onClick={() => handleVoidSale(sale.id)}
                               className="text-xs font-semibold px-3 py-1 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100"
@@ -1535,7 +1673,8 @@ export default function POSDashboard() {
               <div>
                 <h2 className="text-xl font-bold">Transaction Details</h2>
                 <p className="text-sm text-slate-500">
-                  View sold items, exact time, and print when needed.
+                  View sold items, exact time, print, and void restoration
+                  details.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1600,6 +1739,40 @@ export default function POSDashboard() {
                   </div>
                 </div>
 
+                {selectedSaleDetail.status === "void" ? (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-rose-400">
+                        Voided At
+                      </p>
+                      <p className="mt-1 font-semibold text-rose-900">
+                        {selectedSaleDetail.voided_at
+                          ? new Date(
+                              selectedSaleDetail.voided_at,
+                            ).toLocaleString()
+                          : "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-rose-400">
+                        Voided By
+                      </p>
+                      <p className="mt-1 font-semibold text-rose-900">
+                        {selectedSaleDetail.voided_by_profile?.full_name || "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-rose-400">
+                        Void Reason
+                      </p>
+                      <p className="mt-1 font-semibold text-rose-900">
+                        {selectedSaleDetail.void_reason ||
+                          "No reason recorded."}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="overflow-x-auto rounded-2xl border border-slate-100">
                   <table className="w-full text-left">
                     <thead>
@@ -1639,6 +1812,42 @@ export default function POSDashboard() {
                   </table>
                 </div>
 
+                {selectedSaleDetail.status === "void" ? (
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-amber-500">
+                      Restored Inventory
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {selectedSaleDetail.restored_items.length > 0 ? (
+                        selectedSaleDetail.restored_items.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start justify-between gap-4 rounded-xl border border-amber-100 bg-white/70 p-3"
+                          >
+                            <div>
+                              <p className="font-semibold text-slate-900">
+                                {item.productName}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Restored {item.quantity} item(s) at{" "}
+                                {new Date(item.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {item.note || "-"}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500">
+                          No restored stock movements recorded for this voided
+                          sale.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase text-slate-400">
@@ -1656,7 +1865,9 @@ export default function POSDashboard() {
                               {payment.method || "Unknown"}
                             </span>
                             <span className="font-semibold text-slate-900">
-                              {pesoFormatter.format(Number(payment.amount ?? 0))}
+                              {pesoFormatter.format(
+                                Number(payment.amount ?? 0),
+                              )}
                             </span>
                           </div>
                         ))
@@ -1677,7 +1888,8 @@ export default function POSDashboard() {
                         <span className="font-semibold text-slate-900">
                           {pesoFormatter.format(
                             Number(
-                              selectedSaleDetail.subtotal ?? selectedSaleDetail.total,
+                              selectedSaleDetail.subtotal ??
+                                selectedSaleDetail.total,
                             ),
                           )}
                         </span>
@@ -1693,13 +1905,19 @@ export default function POSDashboard() {
                       <div className="flex items-center justify-between">
                         <span className="text-slate-600">Tax</span>
                         <span className="font-semibold text-slate-900">
-                          {pesoFormatter.format(Number(selectedSaleDetail.tax ?? 0))}
+                          {pesoFormatter.format(
+                            Number(selectedSaleDetail.tax ?? 0),
+                          )}
                         </span>
                       </div>
                       <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-base">
-                        <span className="font-semibold text-slate-700">Total</span>
+                        <span className="font-semibold text-slate-700">
+                          Total
+                        </span>
                         <span className="font-bold text-emerald-600">
-                          {pesoFormatter.format(Number(selectedSaleDetail.total ?? 0))}
+                          {pesoFormatter.format(
+                            Number(selectedSaleDetail.total ?? 0),
+                          )}
                         </span>
                       </div>
                     </div>
