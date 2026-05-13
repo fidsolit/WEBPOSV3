@@ -1,4 +1,5 @@
 "use client";
+import { KeyboardEvent } from "react";
 
 import { useState, useEffect } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
@@ -19,7 +20,9 @@ export default function Login() {
 
   useEffect(() => {
     const savedTheme =
-      typeof window !== "undefined" ? window.localStorage.getItem("webpos-theme") : null;
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("webpos-theme")
+        : null;
     if (savedTheme === "light" || savedTheme === "dark") {
       setTheme(savedTheme);
       return;
@@ -38,6 +41,15 @@ export default function Login() {
       window.localStorage.setItem("webpos-theme", theme);
     }
   }, [theme]);
+
+  //handle enter key press
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault(); // Prevents default form submission if inside a form
+      handleLogin();
+      // Trigger your search or navigation logic here
+    }
+  };
 
   // --- Redirect if already logged in ---
   useEffect(() => {
@@ -137,7 +149,9 @@ export default function Login() {
       }`}
     >
       <button
-        onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+        onClick={() =>
+          setTheme((current) => (current === "light" ? "dark" : "light"))
+        }
         className={`absolute top-5 right-5 inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold transition ${
           theme === "dark"
             ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
@@ -158,13 +172,17 @@ export default function Login() {
         <div className="text-center mb-7">
           <div
             className={`h-12 w-12 mx-auto rounded-xl flex items-center justify-center mb-3 ${
-              theme === "dark" ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-600"
+              theme === "dark"
+                ? "bg-blue-500/20 text-blue-300"
+                : "bg-blue-50 text-blue-600"
             }`}
           >
             <ShieldCheck size={22} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">WebPOS V3</h1>
-          <p className={`text-sm mt-1 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+          <p
+            className={`text-sm mt-1 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}
+          >
             Secure sign-in to your dashboard
           </p>
         </div>
@@ -196,8 +214,9 @@ export default function Login() {
                 ? "bg-slate-800 border-slate-700 text-slate-100 focus:ring-blue-500/50"
                 : "bg-white border-slate-200 text-slate-900 focus:ring-blue-200"
             }`}
-            placeholder="you@example.com"
+            placeholder="you@gmail.com"
             value={email}
+            onKeyDown={handleKeyDown}
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
@@ -212,6 +231,7 @@ export default function Login() {
           </label>
           <input
             type="password"
+            onKeyDown={handleKeyDown}
             className={`w-full mt-1 p-3 rounded-xl outline-none border focus:ring-2 ${
               theme === "dark"
                 ? "bg-slate-800 border-slate-700 text-slate-100 focus:ring-blue-500/50"
