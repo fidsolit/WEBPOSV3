@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import {
+  ChevronLeft,
+  ChevronRight,
   Eye,
   Loader2,
   MoreVertical,
@@ -196,9 +198,15 @@ export default function POSDashboard() {
   const [selectedSaleDetail, setSelectedSaleDetail] =
     useState<SaleDetail | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [recentTransactionsPage, setRecentTransactionsPage] = useState(1);
+  const [recentTransactionsTotalCount, setRecentTransactionsTotalCount] =
+    useState(0);
+  const hasLoadedInitialDashboard = useRef(false);
+  const lastLoadedRecentTransactionsPage = useRef(1);
 
   //payment  states
   const [cashAmount, setCashAmount] = useState<string>("");
+  const recentTransactionsPageSize = 5;
 
   const refreshDashboardData = useCallback(async () => {
     try {
@@ -228,11 +236,29 @@ export default function POSDashboard() {
         .order("stock", { ascending: true })
         .limit(8);
 
-      const { data: salesData, error: salesError } = await supabase
+      const { data: salesSummaryData, error: salesSummaryError } =
+        await supabase.from("sales").select("id, total, created_at, status");
+
+      const from = (recentTransactionsPage - 1) * recentTransactionsPageSize;
+      const to = from + recentTransactionsPageSize - 1;
+      const {
+        data: salesData,
+        error: salesError,
+        count: salesCount,
+      } = await supabase
         .from("sales")
-        .select("id, total, created_at, receipt_no, status, user_id")
-        .limit(25)
-        .order("created_at", { ascending: false });
+        .select("id, total, created_at, receipt_no, status, user_id", {
+          count: "exact",
+        })
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (salesSummaryError) {
+        console.error(
+          "Failed to fetch dashboard sales summary:",
+          salesSummaryError.message,
+        );
+      }
 
       if (salesError) {
         console.error("Failed to fetch sales:", salesError.message);
@@ -240,6 +266,7 @@ export default function POSDashboard() {
 
       if (pCount !== null) setTotalProducts(pCount);
       if (lCount !== null) setLowStockCount(lCount);
+      if (salesCount !== null) setRecentTransactionsTotalCount(salesCount);
       if (lowStockData) {
         const normalizedLowStock = (
           lowStockData as {
@@ -295,8 +322,7 @@ export default function POSDashboard() {
           }
         }
 
-        const recentSales = salesData.slice(0, 5);
-        const recentSaleIds = recentSales.map((sale) => sale.id);
+        const recentSaleIds = rows.map((sale) => sale.id);
         let saleCostMap = new Map<string, number>();
 
         if (recentSaleIds.length > 0) {
@@ -316,7 +342,7 @@ export default function POSDashboard() {
         }
 
         setSales(
-          recentSales.map((sale) => ({
+          rows.map((sale) => ({
             ...sale,
             unit_cost_total: saleCostMap.get(sale.id) ?? 0,
             profiles: sale.user_id
@@ -325,7 +351,14 @@ export default function POSDashboard() {
           })),
         );
 
-        const completedSales = salesData.filter(
+        const completedSales = (
+          (salesSummaryData as {
+            id: string;
+            total: number;
+            created_at: string;
+            status: "saved" | "completed" | "void";
+          }[]) ?? []
+        ).filter(
           (sale) => sale.status === "completed",
         );
         setRevenue(
@@ -380,7 +413,7 @@ export default function POSDashboard() {
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     }
-  }, []);
+  }, [recentTransactionsPage]);
 
   // --- 1. Auth & Initial Data ---
   useEffect(() => {
@@ -420,9 +453,25 @@ export default function POSDashboard() {
 
       setCheckingAuth(false);
       await refreshDashboardData();
+      hasLoadedInitialDashboard.current = true;
+      lastLoadedRecentTransactionsPage.current = 1;
     };
     init();
   }, [refreshDashboardData, router]);
+
+  useEffect(() => {
+    if (checkingAuth || !hasLoadedInitialDashboard.current) return;
+    if (lastLoadedRecentTransactionsPage.current === recentTransactionsPage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      lastLoadedRecentTransactionsPage.current = recentTransactionsPage;
+      void refreshDashboardData();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [checkingAuth, recentTransactionsPage, refreshDashboardData]);
 
   // --- 3. Actions ---
   const loadCatalogItems = useCallback(async () => {
@@ -1141,6 +1190,11 @@ export default function POSDashboard() {
     );
   }
 
+  const totalRecentTransactionPages = Math.max(
+    1,
+    Math.ceil(recentTransactionsTotalCount / recentTransactionsPageSize),
+  );
+
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       <Sidebar onNewSaleClick={openNewSaleModal} />
@@ -1293,6 +1347,59 @@ export default function POSDashboard() {
               </tbody>
             </table>
           </div>
+          {recentTransactionsTotalCount > 0 && (
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-8 py-4 md:flex-row md:items-center md:justify-between">
+              <p className="text-sm text-slate-500">
+                Showing{" "}
+                <span className="font-semibold text-slate-700">
+                  {(recentTransactionsPage - 1) * recentTransactionsPageSize + 1}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-slate-700">
+                  {Math.min(
+                    recentTransactionsPage * recentTransactionsPageSize,
+                    recentTransactionsTotalCount,
+                  )}
+                </span>{" "}
+                of{" "}
+                <span className="font-semibold text-slate-700">
+                  {recentTransactionsTotalCount}
+                </span>{" "}
+                transactions
+              </p>
+              <div className="flex items-center gap-2 self-start md:self-auto">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRecentTransactionsPage((page) => Math.max(1, page - 1))
+                  }
+                  disabled={recentTransactionsPage === 1}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ChevronLeft size={16} />
+                  Previous
+                </button>
+                <span className="text-sm font-semibold text-slate-600">
+                  Page {recentTransactionsPage} of {totalRecentTransactionPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRecentTransactionsPage((page) =>
+                      Math.min(totalRecentTransactionPages, page + 1),
+                    )
+                  }
+                  disabled={
+                    recentTransactionsPage >= totalRecentTransactionPages
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">

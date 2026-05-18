@@ -106,7 +106,9 @@ export default function Inventory() {
   const loadRecentLosses = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
       .from("inventory_losses")
-      .select("id, quantity, reason, created_at, product_id, variant_id, created_by")
+      .select(
+        "id, quantity, reason, created_at, product_id, variant_id, created_by",
+      )
       .eq("branch_id", branchId)
       .order("created_at", { ascending: false })
       .limit(10);
@@ -118,13 +120,25 @@ export default function Inventory() {
 
     const rows = (data as InventoryLossRow[]) ?? [];
     const productIds = Array.from(
-      new Set(rows.map((row) => row.product_id).filter((id): id is string => Boolean(id))),
+      new Set(
+        rows
+          .map((row) => row.product_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
     const variantIds = Array.from(
-      new Set(rows.map((row) => row.variant_id).filter((id): id is string => Boolean(id))),
+      new Set(
+        rows
+          .map((row) => row.variant_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
     const encodedByIds = Array.from(
-      new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id))),
+      new Set(
+        rows
+          .map((row) => row.created_by)
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
 
     let productNameMap = new Map<string, string>();
@@ -166,10 +180,9 @@ export default function Inventory() {
         .in("id", encodedByIds);
 
       encodedByMap = new Map(
-        ((profileRows ?? []) as { id: string; full_name: string | null }[]).map((row) => [
-          row.id,
-          row.full_name,
-        ]),
+        ((profileRows ?? []) as { id: string; full_name: string | null }[]).map(
+          (row) => [row.id, row.full_name],
+        ),
       );
     }
 
@@ -275,13 +288,15 @@ export default function Inventory() {
 
       if (productError) throw productError;
 
-      const { error: inventoryError } = await supabase.from("inventory").insert([
-        {
-          product_id: product.id,
-          branch_id: activeBranchId,
-          stock: parsedStock,
-        },
-      ]);
+      const { error: inventoryError } = await supabase
+        .from("inventory")
+        .insert([
+          {
+            product_id: product.id,
+            branch_id: activeBranchId,
+            stock: parsedStock,
+          },
+        ]);
 
       if (inventoryError) throw inventoryError;
 
@@ -418,15 +433,17 @@ export default function Inventory() {
     const { data: userResult } = await supabase.auth.getUser();
     const userId = userResult.user?.id ?? null;
 
-    const { error: lossError } = await supabase.from("inventory_losses").insert([
-      {
-        branch_id: activeBranchId,
-        product_id: lossForm.productId,
-        quantity,
-        reason: lossForm.reason.trim(),
-        created_by: userId,
-      },
-    ]);
+    const { error: lossError } = await supabase
+      .from("inventory_losses")
+      .insert([
+        {
+          branch_id: activeBranchId,
+          product_id: lossForm.productId,
+          quantity,
+          reason: lossForm.reason.trim(),
+          created_by: userId,
+        },
+      ]);
 
     if (lossError) {
       alert(lossError.message);
@@ -485,7 +502,9 @@ export default function Inventory() {
               </span>
             </div>
             <h1 className="text-3xl font-bold">Inventory List</h1>
-            <p className="text-slate-500">Managing stock for {activeBranchName}</p>
+            <p className="text-slate-500">
+              Managing stock for {activeBranchName}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -525,7 +544,9 @@ export default function Inventory() {
                 required
                 placeholder="Enter name"
                 value={newItem.name}
-                onChange={(event) => setNewItem({ ...newItem, name: event.target.value })}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, name: event.target.value })
+                }
                 className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
@@ -553,7 +574,9 @@ export default function Inventory() {
                   type="number"
                   step="0.01"
                   value={newItem.cost}
-                  onChange={(event) => setNewItem({ ...newItem, cost: event.target.value })}
+                  onChange={(event) =>
+                    setNewItem({ ...newItem, cost: event.target.value })
+                  }
                   className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
@@ -592,20 +615,30 @@ export default function Inventory() {
               type="submit"
               className="flex w-full items-center justify-center rounded-2xl bg-blue-600 py-4 font-bold text-white transition hover:bg-blue-700"
             >
-              {loading ? <Loader2 className="mr-2 animate-spin" size={20} /> : "Save Product"}
+              {loading ? (
+                <Loader2 className="mr-2 animate-spin" size={20} />
+              ) : (
+                "Save Product"
+              )}
             </button>
           </form>
         </ModalShell>
       )}
 
       {isVariantModalOpen && (
-        <ModalShell title="Add Variant" onClose={() => setIsVariantModalOpen(false)}>
+        <ModalShell
+          title="Add Variant"
+          onClose={() => setIsVariantModalOpen(false)}
+        >
           <form onSubmit={handleAddVariant} className="space-y-4">
             <select
               required
               value={variantForm.productId}
               onChange={(event) =>
-                setVariantForm({ ...variantForm, productId: event.target.value })
+                setVariantForm({
+                  ...variantForm,
+                  productId: event.target.value,
+                })
               }
               className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
             >
@@ -648,7 +681,10 @@ export default function Inventory() {
               placeholder="Opening stock"
               value={variantForm.openingStock}
               onChange={(event) =>
-                setVariantForm({ ...variantForm, openingStock: event.target.value })
+                setVariantForm({
+                  ...variantForm,
+                  openingStock: event.target.value,
+                })
               }
               className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
             />
@@ -664,7 +700,10 @@ export default function Inventory() {
       )}
 
       {isLossModalOpen && (
-        <ModalShell title="Log Inventory Loss" onClose={() => setIsLossModalOpen(false)}>
+        <ModalShell
+          title="Log Inventory Loss"
+          onClose={() => setIsLossModalOpen(false)}
+        >
           <form onSubmit={handleLogLoss} className="space-y-4">
             <select
               required
@@ -695,7 +734,9 @@ export default function Inventory() {
               required
               placeholder="Reason (damaged, expired, missing, etc.)"
               value={lossForm.reason}
-              onChange={(event) => setLossForm({ ...lossForm, reason: event.target.value })}
+              onChange={(event) =>
+                setLossForm({ ...lossForm, reason: event.target.value })
+              }
               className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
             />
             <button
