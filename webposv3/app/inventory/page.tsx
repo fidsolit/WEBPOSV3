@@ -8,20 +8,26 @@ import { PaginationControls } from "../components/pagination-controls";
 import { supabase } from "@/lib/supabaseClient";
 import { ModalShell } from "./components/modal-shell";
 import { InventoryTable } from "./components/inventory-table";
+import { RecentDeliveriesTable } from "./components/recent-deliveries-table";
 import { RecentLossesTable } from "./components/recent-losses-table";
 import {
+  DEFAULT_DELIVERY_FORM,
   DEFAULT_LOSS_FORM,
   DEFAULT_NEW_ITEM_FORM,
   DEFAULT_VARIANT_FORM,
 } from "./constants";
 import type {
+  DeliveryFormState,
   InventoryItem,
   InventoryLossRow,
   InventoryRow,
   ProductOption,
+  RecentDeliveryItem,
   RecentLossItem,
+  StockMovementRow,
 } from "./types";
 import {
+  buildRecentDeliveryItems,
   buildRecentLossItems,
   formatCurrency,
   normalizeInventoryRows,
@@ -51,6 +57,7 @@ export default function Inventory() {
   const [inventoryTotalCount, setInventoryTotalCount] = useState(0);
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [recentDeliveries, setRecentDeliveries] = useState<RecentDeliveryItem[]>([]);
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
   const [selectedLowStockItem, setSelectedLowStockItem] =
     useState<InventoryItem | null>(null);
@@ -59,6 +66,7 @@ export default function Inventory() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
   const [isLossModalOpen, setIsLossModalOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -70,7 +78,11 @@ export default function Inventory() {
 
   const [newItem, setNewItem] = useState(DEFAULT_NEW_ITEM_FORM);
   const [variantForm, setVariantForm] = useState(DEFAULT_VARIANT_FORM);
+  const [deliveryForm, setDeliveryForm] =
+    useState<DeliveryFormState>(DEFAULT_DELIVERY_FORM);
   const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
+  const [deliverySearch, setDeliverySearch] = useState("");
+  const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState("");
   const inventoryPageSize = 10;
   const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
@@ -118,7 +130,7 @@ export default function Inventory() {
   const loadProductOptions = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
-      .select("id, name")
+      .select("id, name, barcode")
       .order("name", { ascending: true });
 
     if (error) {
@@ -158,6 +170,69 @@ export default function Inventory() {
     setLowStockItems(
       normalizedItems.filter((item) => item.stock <= (item.min_stock ?? 0)),
     );
+  }, []);
+
+  const loadRecentDeliveries = useCallback(async (branchId: string) => {
+    const { data, error } = await supabase
+      .from("stock_movements")
+      .select("id, quantity, unit_cost, note, created_at, product_id, created_by")
+      .eq("branch_id", branchId)
+      .eq("movement_type", "restock")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error("Failed loading recent deliveries:", error.message);
+      return;
+    }
+
+    const rows = (data as StockMovementRow[]) ?? [];
+    const productIds = Array.from(
+      new Set(
+        rows
+          .map((row) => row.product_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const encodedByIds = Array.from(
+      new Set(
+        rows
+          .map((row) => row.created_by)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    let productNameMap = new Map<string, string>();
+    let encodedByMap = new Map<string, string | null>();
+
+    if (productIds.length > 0) {
+      const { data: productRows } = await supabase
+        .from("products")
+        .select("id, name")
+        .in("id", productIds);
+
+      productNameMap = new Map(
+        ((productRows ?? []) as { id: string; name: string }[]).map((row) => [
+          row.id,
+          row.name,
+        ]),
+      );
+    }
+
+    if (encodedByIds.length > 0) {
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", encodedByIds);
+
+      encodedByMap = new Map(
+        ((profileRows ?? []) as { id: string; full_name: string | null }[]).map(
+          (row) => [row.id, row.full_name],
+        ),
+      );
+    }
+
+    setRecentDeliveries(buildRecentDeliveryItems(rows, productNameMap, encodedByMap));
   }, []);
 
   const loadRecentLosses = useCallback(async (branchId: string) => {
@@ -294,12 +369,20 @@ export default function Inventory() {
         fetchInventory(branch.id, 1),
         loadLowStockItems(branch.id),
         loadProductOptions(),
+        loadRecentDeliveries(branch.id),
         loadRecentLosses(branch.id),
       ]);
     };
 
     init();
-  }, [fetchInventory, loadLowStockItems, loadProductOptions, loadRecentLosses, router]);
+  }, [
+    fetchInventory,
+    loadLowStockItems,
+    loadProductOptions,
+    loadRecentDeliveries,
+    loadRecentLosses,
+    router,
+  ]);
 
   const handleAddItem = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -456,6 +539,128 @@ export default function Inventory() {
     ]);
   };
 
+  const handleReceiveDelivery = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!activeBranchId) {
+      alert("No active branch found.");
+      return;
+    }
+
+    if (!deliveryForm.productId) {
+      alert("Select a product.");
+      return;
+    }
+
+    const quantity = Number.parseInt(deliveryForm.quantity, 10);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert("Enter a valid delivery quantity.");
+      return;
+    }
+
+    const unitCost =
+      deliveryForm.unitCost.trim() === ""
+        ? null
+        : Number.parseFloat(deliveryForm.unitCost);
+    if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
+      alert("Enter a valid unit cost.");
+      return;
+    }
+
+    const noteParts = [
+      deliveryForm.supplierName.trim()
+        ? `Supplier: ${deliveryForm.supplierName.trim()}`
+        : null,
+      deliveryForm.referenceNumber.trim()
+        ? `Reference: ${deliveryForm.referenceNumber.trim()}`
+        : null,
+      deliveryForm.note.trim() ? deliveryForm.note.trim() : null,
+    ].filter((part): part is string => Boolean(part));
+
+    setLoading(true);
+
+    const { data: inventoryRecord, error: inventoryError } = await supabase
+      .from("inventory")
+      .select("id, stock, product_id")
+      .eq("branch_id", activeBranchId)
+      .eq("product_id", deliveryForm.productId)
+      .single();
+
+    if (inventoryError || !inventoryRecord) {
+      alert(inventoryError?.message || "Inventory item not found.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: userResult } = await supabase.auth.getUser();
+    const userId = userResult.user?.id ?? null;
+    const updatedStock = Number(inventoryRecord.stock ?? 0) + quantity;
+
+    const { error: updateError } = await supabase
+      .from("inventory")
+      .update({
+        stock: updatedStock,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", inventoryRecord.id);
+
+    if (updateError) {
+      alert(updateError.message);
+      setLoading(false);
+      return;
+    }
+
+    const { error: movementError } = await supabase
+      .from("stock_movements")
+      .insert([
+        {
+          branch_id: activeBranchId,
+          product_id: deliveryForm.productId,
+          movement_type: "restock",
+          quantity,
+          unit_cost: unitCost,
+          reference_type: "delivery",
+          note: noteParts.length > 0 ? noteParts.join(" | ") : null,
+          created_by: userId,
+        },
+      ]);
+
+    if (movementError) {
+      await supabase
+        .from("inventory")
+        .update({
+          stock: inventoryRecord.stock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", inventoryRecord.id);
+      if (
+        movementError.message.includes("row-level security policy") ||
+        movementError.message.includes("violates row-level security policy")
+      ) {
+        alert(
+          "Delivery was blocked by Supabase RLS for stock_movements. Run phase1_stock_movements_policy_upgrade.sql in Supabase SQL Editor, then try again.",
+        );
+        setLoading(false);
+        return;
+      }
+      alert(movementError.message);
+      setLoading(false);
+      return;
+    }
+
+    setDeliveryForm(DEFAULT_DELIVERY_FORM);
+    setDeliverySearch("");
+    setDeliveryBarcodeInput("");
+    setIsDeliveryModalOpen(false);
+    setLoading(false);
+
+    await Promise.all([
+      fetchInventory(activeBranchId, inventoryPage),
+      loadLowStockItems(activeBranchId),
+      loadRecentDeliveries(activeBranchId),
+    ]);
+  };
+
   const handleLogLoss = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -554,6 +759,15 @@ export default function Inventory() {
   );
   const visibleLowStockItems = useMemo(() => lowStockItems.slice(0, 8), [lowStockItems]);
   const displayedInventoryItems = showLowStockOnly ? lowStockItems : items;
+  const filteredDeliveryProducts = useMemo(() => {
+    const query = deliverySearch.trim().toLowerCase();
+    if (!query) return productOptions;
+    return productOptions.filter((product) => {
+      const nameMatch = product.name.toLowerCase().includes(query);
+      const barcodeMatch = (product.barcode ?? "").toLowerCase().includes(query);
+      return nameMatch || barcodeMatch;
+    });
+  }, [deliverySearch, productOptions]);
 
   const handleInventoryPageChange = async (page: number) => {
     if (!activeBranchId) return;
@@ -572,6 +786,45 @@ export default function Inventory() {
         block: "start",
       });
     }, 0);
+  };
+
+  const handleDeliveryProductSearch = () => {
+    const query = deliverySearch.trim().toLowerCase();
+    if (!query) return;
+    const matchedProduct = productOptions.find((product) => {
+      return (
+        product.name.toLowerCase().includes(query) ||
+        (product.barcode ?? "").toLowerCase() === query
+      );
+    });
+    if (!matchedProduct) {
+      alert("No matching product found.");
+      return;
+    }
+    setDeliveryForm((current) => ({
+      ...current,
+      productId: matchedProduct.id,
+    }));
+    setDeliveryBarcodeInput(matchedProduct.barcode ?? "");
+    setDeliverySearch(matchedProduct.name);
+  };
+
+  const handleDeliveryBarcodeChange = (value: string) => {
+    setDeliveryBarcodeInput(value);
+    const normalizedBarcode = value.trim().toLowerCase();
+    if (!normalizedBarcode) return;
+
+    const matchedProduct = productOptions.find(
+      (product) => (product.barcode ?? "").toLowerCase() === normalizedBarcode,
+    );
+
+    if (!matchedProduct) return;
+
+    setDeliveryForm((current) => ({
+      ...current,
+      productId: matchedProduct.id,
+    }));
+    setDeliverySearch(matchedProduct.name);
   };
 
   if (checkingAuth) {
@@ -612,6 +865,12 @@ export default function Inventory() {
               className="flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white shadow-xl shadow-blue-100 transition-all hover:scale-105"
             >
               <Plus size={20} /> Add Product
+            </button>
+            <button
+              onClick={() => setIsDeliveryModalOpen(true)}
+              className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-6 py-3 font-bold text-white shadow-xl shadow-emerald-100 transition-all hover:scale-105"
+            >
+              <Plus size={20} /> Receive Delivery
             </button>
             <button
               onClick={() => setIsVariantModalOpen(true)}
@@ -717,6 +976,7 @@ export default function Inventory() {
             )}
           </div>
         </section>
+        <RecentDeliveriesTable recentDeliveries={recentDeliveries} />
         <RecentLossesTable recentLosses={recentLosses} />
       </main>
 
@@ -895,6 +1155,135 @@ export default function Inventory() {
               className="w-full rounded-2xl bg-violet-600 py-4 font-bold text-white"
             >
               {loading ? "Saving..." : "Save Variant"}
+            </button>
+          </form>
+        </ModalShell>
+      )}
+
+      {isDeliveryModalOpen && (
+        <ModalShell
+          title="Receive Delivery"
+          onClose={() => {
+            setIsDeliveryModalOpen(false);
+            setDeliverySearch("");
+            setDeliveryBarcodeInput("");
+          }}
+        >
+          <form onSubmit={handleReceiveDelivery} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto]">
+              <input
+                placeholder="Search product by name or barcode"
+                value={deliverySearch}
+                onChange={(event) => setDeliverySearch(event.target.value)}
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+              />
+              <button
+                type="button"
+                onClick={handleDeliveryProductSearch}
+                className="rounded-2xl bg-slate-800 px-5 py-4 font-bold text-white"
+              >
+                Search
+              </button>
+            </div>
+            <input
+              placeholder="Scan or type barcode"
+              value={deliveryBarcodeInput}
+              onChange={(event) => handleDeliveryBarcodeChange(event.target.value)}
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <select
+              required
+              value={deliveryForm.productId}
+              onChange={(event) => {
+                const selectedProduct = productOptions.find(
+                  (product) => product.id === event.target.value,
+                );
+                setDeliveryForm({
+                  ...deliveryForm,
+                  productId: event.target.value,
+                });
+                setDeliverySearch(selectedProduct?.name ?? "");
+                setDeliveryBarcodeInput(selectedProduct?.barcode ?? "");
+              }}
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            >
+              <option value="">Select product</option>
+              {filteredDeliveryProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                  {product.barcode ? ` (${product.barcode})` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <input
+                required
+                type="number"
+                min="1"
+                placeholder="Delivered quantity"
+                value={deliveryForm.quantity}
+                onChange={(event) =>
+                  setDeliveryForm({
+                    ...deliveryForm,
+                    quantity: event.target.value,
+                  })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+              />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Unit cost (optional)"
+                value={deliveryForm.unitCost}
+                onChange={(event) =>
+                  setDeliveryForm({
+                    ...deliveryForm,
+                    unitCost: event.target.value,
+                  })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+              />
+            </div>
+            <input
+              placeholder="Supplier name (optional)"
+              value={deliveryForm.supplierName}
+              onChange={(event) =>
+                setDeliveryForm({
+                  ...deliveryForm,
+                  supplierName: event.target.value,
+                })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <input
+              placeholder="Reference number / invoice (optional)"
+              value={deliveryForm.referenceNumber}
+              onChange={(event) =>
+                setDeliveryForm({
+                  ...deliveryForm,
+                  referenceNumber: event.target.value,
+                })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <textarea
+              placeholder="Notes (optional)"
+              value={deliveryForm.note}
+              onChange={(event) =>
+                setDeliveryForm({
+                  ...deliveryForm,
+                  note: event.target.value,
+                })
+              }
+              className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
+            />
+            <button
+              disabled={loading}
+              type="submit"
+              className="w-full rounded-2xl bg-emerald-600 py-4 font-bold text-white"
+            >
+              {loading ? "Saving..." : "Receive Delivery"}
             </button>
           </form>
         </ModalShell>

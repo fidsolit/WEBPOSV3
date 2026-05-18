@@ -23,12 +23,23 @@ export interface InventoryRow {
 export interface ProductOption {
   id: string;
   name: string;
+  barcode?: string | null;
 }
 
 export interface RecentLossItem {
   id: string;
   quantity: number;
   reason: string;
+  created_at: string;
+  item_name: string;
+  encoded_by: string;
+}
+
+export interface RecentDeliveryItem {
+  id: string;
+  quantity: number;
+  unit_cost: number | null;
+  note: string | null;
   created_at: string;
   item_name: string;
   encoded_by: string;
@@ -41,6 +52,16 @@ export interface InventoryLossRow {
   created_at: string;
   product_id: string | null;
   variant_id: string | null;
+  created_by: string | null;
+}
+
+export interface StockMovementRow {
+  id: string;
+  quantity: number;
+  unit_cost: number | null;
+  note: string | null;
+  created_at: string;
+  product_id: string | null;
   created_by: string | null;
 }
 
@@ -65,4 +86,13 @@ export interface LossFormState {
   productId: string;
   quantity: string;
   reason: string;
+}
+
+export interface DeliveryFormState {
+  productId: string;
+  quantity: string;
+  unitCost: string;
+  supplierName: string;
+  referenceNumber: string;
+  note: string;
 }

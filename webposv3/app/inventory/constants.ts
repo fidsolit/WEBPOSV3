@@ -1,4 +1,5 @@
 import type {
+  DeliveryFormState,
   LossFormState,
   NewItemFormState,
   VariantFormState,
@@ -25,4 +26,13 @@ export const DEFAULT_LOSS_FORM: LossFormState = {
   productId: "",
   quantity: "",
   reason: "",
+};
+
+export const DEFAULT_DELIVERY_FORM: DeliveryFormState = {
+  productId: "",
+  quantity: "",
+  unitCost: "",
+  supplierName: "",
+  referenceNumber: "",
+  note: "",
 };
