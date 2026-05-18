@@ -3,6 +3,7 @@ import type {
   InventoryItem,
   InventoryLossRow,
   InventoryRow,
+  RecentInventoryHistoryItem,
   RecentLossItem,
   StockMovementRow,
 } from "./types";
@@ -64,5 +65,26 @@ export function buildRecentDeliveryItems(
     encoded_by: row.created_by
       ? (encodedByMap.get(row.created_by) ?? "Unknown user")
       : "System",
+  }));
+}
+
+export function buildRecentInventoryHistoryItems(
+  rows: StockMovementRow[],
+  productNameMap: Map<string, string>,
+  encodedByMap: Map<string, string | null>,
+): RecentInventoryHistoryItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    quantity: row.quantity,
+    unit_cost: row.unit_cost,
+    note: row.note,
+    created_at: row.created_at,
+    item_name: row.product_id
+      ? (productNameMap.get(row.product_id) ?? "Unknown product")
+      : "Unknown item",
+    encoded_by: row.created_by
+      ? (encodedByMap.get(row.created_by) ?? "Unknown user")
+      : "System",
+    movement_type: row.movement_type,
   }));
 }

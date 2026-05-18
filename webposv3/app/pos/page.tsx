@@ -705,6 +705,28 @@ export default function POSDashboard() {
       }
     }
 
+    const stockMovementPayload = cart.map((item) => ({
+      branch_id: activeBranchId,
+      product_id: item.id,
+      movement_type: "sale" as const,
+      quantity: item.quantity,
+      unit_cost: Number(item.cost) || 0,
+      reference_type: "sale",
+      reference_id: saleData.id,
+      note: `Stock deducted from sale ${receiptNo}.`,
+      created_by: currentUserId,
+    }));
+
+    const { error: stockMovementError } = await supabase
+      .from("stock_movements")
+      .insert(stockMovementPayload);
+
+    if (stockMovementError) {
+      alert(
+        `Sale completed but failed to save stock history: ${stockMovementError.message}`,
+      );
+    }
+
     setIsModalOpen(false);
     setCart([]);
     setItemSearch("");

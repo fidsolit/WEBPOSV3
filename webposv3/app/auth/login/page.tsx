@@ -3,6 +3,7 @@ import { KeyboardEvent } from "react";
 
 import { useState, useEffect } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
+import { logUserActivity } from "@/lib/activityLogger";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Moon, Sun, ShieldCheck, Loader2 } from "lucide-react";
@@ -120,6 +121,7 @@ export default function Login() {
       return;
     }
 
+    await logUserActivity("login");
     router.push("/pos");
   };
 

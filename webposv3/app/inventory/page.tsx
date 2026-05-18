@@ -7,6 +7,7 @@ import Sidebar from "../components/sidebar";
 import { PaginationControls } from "../components/pagination-controls";
 import { supabase } from "@/lib/supabaseClient";
 import { ModalShell } from "./components/modal-shell";
+import { InventoryHistoryTable } from "./components/inventory-history-table";
 import { InventoryTable } from "./components/inventory-table";
 import { RecentDeliveriesTable } from "./components/recent-deliveries-table";
 import { RecentLossesTable } from "./components/recent-losses-table";
@@ -23,11 +24,13 @@ import type {
   InventoryRow,
   ProductOption,
   RecentDeliveryItem,
+  RecentInventoryHistoryItem,
   RecentLossItem,
   StockMovementRow,
 } from "./types";
 import {
   buildRecentDeliveryItems,
+  buildRecentInventoryHistoryItems,
   buildRecentLossItems,
   formatCurrency,
   normalizeInventoryRows,
@@ -58,6 +61,7 @@ export default function Inventory() {
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [recentDeliveries, setRecentDeliveries] = useState<RecentDeliveryItem[]>([]);
+  const [inventoryHistory, setInventoryHistory] = useState<RecentInventoryHistoryItem[]>([]);
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
   const [selectedLowStockItem, setSelectedLowStockItem] =
     useState<InventoryItem | null>(null);
@@ -235,6 +239,72 @@ export default function Inventory() {
     setRecentDeliveries(buildRecentDeliveryItems(rows, productNameMap, encodedByMap));
   }, []);
 
+  const loadInventoryHistory = useCallback(async (branchId: string) => {
+    const { data, error } = await supabase
+      .from("stock_movements")
+      .select(
+        "id, quantity, unit_cost, note, created_at, product_id, created_by, movement_type, reference_type",
+      )
+      .eq("branch_id", branchId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Failed loading inventory history:", error.message);
+      return;
+    }
+
+    const rows = (data as StockMovementRow[]) ?? [];
+    const productIds = Array.from(
+      new Set(
+        rows
+          .map((row) => row.product_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const encodedByIds = Array.from(
+      new Set(
+        rows
+          .map((row) => row.created_by)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    let productNameMap = new Map<string, string>();
+    let encodedByMap = new Map<string, string | null>();
+
+    if (productIds.length > 0) {
+      const { data: productRows } = await supabase
+        .from("products")
+        .select("id, name")
+        .in("id", productIds);
+
+      productNameMap = new Map(
+        ((productRows ?? []) as { id: string; name: string }[]).map((row) => [
+          row.id,
+          row.name,
+        ]),
+      );
+    }
+
+    if (encodedByIds.length > 0) {
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", encodedByIds);
+
+      encodedByMap = new Map(
+        ((profileRows ?? []) as { id: string; full_name: string | null }[]).map(
+          (row) => [row.id, row.full_name],
+        ),
+      );
+    }
+
+    setInventoryHistory(
+      buildRecentInventoryHistoryItems(rows, productNameMap, encodedByMap),
+    );
+  }, []);
+
   const loadRecentLosses = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
       .from("inventory_losses")
@@ -370,6 +440,7 @@ export default function Inventory() {
         loadLowStockItems(branch.id),
         loadProductOptions(),
         loadRecentDeliveries(branch.id),
+        loadInventoryHistory(branch.id),
         loadRecentLosses(branch.id),
       ]);
     };
@@ -380,6 +451,7 @@ export default function Inventory() {
     loadLowStockItems,
     loadProductOptions,
     loadRecentDeliveries,
+    loadInventoryHistory,
     loadRecentLosses,
     router,
   ]);
@@ -658,6 +730,7 @@ export default function Inventory() {
       fetchInventory(activeBranchId, inventoryPage),
       loadLowStockItems(activeBranchId),
       loadRecentDeliveries(activeBranchId),
+      loadInventoryHistory(activeBranchId),
     ]);
   };
 
@@ -742,6 +815,42 @@ export default function Inventory() {
       return;
     }
 
+    const { error: movementError } = await supabase
+      .from("stock_movements")
+      .insert([
+        {
+          branch_id: activeBranchId,
+          product_id: lossForm.productId,
+          movement_type: "adjustment",
+          quantity,
+          unit_cost: null,
+          reference_type: "inventory_loss",
+          note: `Loss recorded: ${lossForm.reason.trim()}`,
+          created_by: userId,
+        },
+      ]);
+
+    if (movementError) {
+      await supabase
+        .from("inventory")
+        .update({
+          stock: inventoryRecord.stock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", inventoryRecord.id);
+      await supabase
+        .from("inventory_losses")
+        .delete()
+        .eq("branch_id", activeBranchId)
+        .eq("product_id", lossForm.productId)
+        .eq("created_by", userId)
+        .eq("quantity", quantity)
+        .eq("reason", lossForm.reason.trim());
+      alert(movementError.message);
+      setLoading(false);
+      return;
+    }
+
     setLossForm(DEFAULT_LOSS_FORM);
     setIsLossModalOpen(false);
     setLoading(false);
@@ -749,6 +858,7 @@ export default function Inventory() {
     await Promise.all([
       fetchInventory(activeBranchId, inventoryPage),
       loadLowStockItems(activeBranchId),
+      loadInventoryHistory(activeBranchId),
       loadRecentLosses(activeBranchId),
     ]);
   };
@@ -976,6 +1086,7 @@ export default function Inventory() {
             )}
           </div>
         </section>
+        <InventoryHistoryTable historyItems={inventoryHistory} />
         <RecentDeliveriesTable recentDeliveries={recentDeliveries} />
         <RecentLossesTable recentLosses={recentLosses} />
       </main>

@@ -23,6 +23,14 @@ interface CashierProfile {
   created_at: string;
 }
 
+interface UserActivityLog {
+  id: string;
+  user_id: string;
+  branch_id: string | null;
+  activity_type: "login" | "logout";
+  created_at: string;
+}
+
 export default function CashiersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -34,6 +42,7 @@ export default function CashiersPage() {
 
   const [profiles, setProfiles] = useState<CashierProfile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [recentActivities, setRecentActivities] = useState<UserActivityLog[]>([]);
   const pageSize = 10;
 
   const loadData = useCallback(async () => {
@@ -41,6 +50,7 @@ export default function CashiersPage() {
     const [
       { data: branchData, error: branchError },
       { data: profileData, error: profileError },
+      { data: activityData, error: activityError },
     ] = await Promise.all([
       supabase
         .from("branches")
@@ -50,15 +60,23 @@ export default function CashiersPage() {
         .from("profiles")
         .select("id, full_name, role, is_approved, branch_id, created_at")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("user_activity_logs")
+        .select("id, user_id, branch_id, activity_type, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20),
     ]);
 
     if (branchError)
       console.error("Failed to fetch branches:", branchError.message);
     if (profileError)
       console.error("Failed to fetch profiles:", profileError.message);
+    if (activityError)
+      console.error("Failed to fetch recent activities:", activityError.message);
 
     setBranches((branchData as Branch[]) ?? []);
     setProfiles((profileData as CashierProfile[]) ?? []);
+    setRecentActivities((activityData as UserActivityLog[]) ?? []);
     setLoading(false);
   }, []);
 
@@ -113,6 +131,20 @@ export default function CashiersPage() {
         );
       });
   }, [profiles, branchMap, query, roleFilter]);
+
+  const activityRows = useMemo(() => {
+    const profileMap = new Map(
+      profiles.map((profile) => [profile.id, profile.full_name || "No name"]),
+    );
+
+    return recentActivities.map((activity) => ({
+      ...activity,
+      fullName: profileMap.get(activity.user_id) || "Unknown user",
+      branchName: activity.branch_id
+        ? branchMap.get(activity.branch_id) || "Unknown branch"
+        : "Unassigned",
+    }));
+  }, [branchMap, profiles, recentActivities]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const effectivePage = Math.min(page, totalPages);
@@ -350,6 +382,59 @@ export default function CashiersPage() {
               setPage(nextPage);
             }}
           />
+        </section>
+
+        <section className="mt-6 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100">
+            <h2 className="text-lg font-bold">Recent User Activities</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Admin-only view of recent login and logout events for all users.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/60 text-slate-500 text-xs uppercase">
+                <tr>
+                  <th className="px-6 py-4">User</th>
+                  <th className="px-6 py-4">Activity</th>
+                  <th className="px-6 py-4">Branch</th>
+                  <th className="px-6 py-4">Date & Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {activityRows.length > 0 ? (
+                  activityRows.map((activity) => (
+                    <tr key={activity.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-6 py-4 font-semibold">{activity.fullName}</td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+                            activity.activity_type === "login"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {activity.activity_type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {activity.branchName}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500">
+                        {new Date(activity.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center text-slate-400">
+                      No recent user activity found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>

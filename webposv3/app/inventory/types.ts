@@ -63,6 +63,19 @@ export interface StockMovementRow {
   created_at: string;
   product_id: string | null;
   created_by: string | null;
+  movement_type: "sale" | "restock" | "adjustment" | "transfer_in" | "transfer_out" | "void_restore";
+  reference_type?: string | null;
+}
+
+export interface RecentInventoryHistoryItem {
+  id: string;
+  quantity: number;
+  unit_cost: number | null;
+  note: string | null;
+  created_at: string;
+  item_name: string;
+  encoded_by: string;
+  movement_type: StockMovementRow["movement_type"];
 }
 
 export interface NewItemFormState {

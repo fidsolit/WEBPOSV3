@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { logUserActivity } from "@/lib/activityLogger";
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -50,6 +51,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   }, []);
 
   const handleLogout = async () => {
+    await logUserActivity("logout");
     await supabase.auth.signOut();
     router.refresh();
     router.push("/auth/login");
@@ -134,7 +136,17 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   );
 }
 
-function SidebarItem({ href, icon, label, active }: any) {
+function SidebarItem({
+  href,
+  icon,
+  label,
+  active,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+}) {
   return (
     <Link
       href={href}
