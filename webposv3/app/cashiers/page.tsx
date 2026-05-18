@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw, Search, Shield, UserCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { PaginationControls } from "../components/pagination-controls";
 import Sidebar from "../components/sidebar";
 
 type Role = "admin" | "cashier";
@@ -22,10 +23,6 @@ interface CashierProfile {
   created_at: string;
 }
 
-interface CashierRow extends CashierProfile {
-  branchName: string;
-}
-
 export default function CashiersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -33,9 +30,11 @@ export default function CashiersPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | Role>("all");
+  const [page, setPage] = useState(1);
 
   const [profiles, setProfiles] = useState<CashierProfile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const pageSize = 10;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -114,6 +113,13 @@ export default function CashiersPage() {
         );
       });
   }, [profiles, branchMap, query, roleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const effectivePage = Math.min(page, totalPages);
+  const paginatedRows = useMemo(() => {
+    const start = (effectivePage - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [effectivePage, pageSize, rows]);
 
   const updateProfile = async (id: string, patch: Partial<CashierProfile>) => {
     setSaving(id);
@@ -213,14 +219,20 @@ export default function CashiersPage() {
               />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(1);
+                }}
                 placeholder="Search by name, ID, or branch..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as "all" | Role)}
+              onChange={(e) => {
+                setRoleFilter(e.target.value as "all" | Role);
+                setPage(1);
+              }}
               className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-600"
             >
               <option value="all">All Roles</option>
@@ -252,7 +264,7 @@ export default function CashiersPage() {
                     </td>
                   </tr>
                 )}
-                {rows.map((profile) => (
+                {paginatedRows.map((profile) => (
                   <tr
                     key={profile.id}
                     className="hover:bg-slate-50/60 transition-colors"
@@ -328,6 +340,16 @@ export default function CashiersPage() {
               </tbody>
             </table>
           </div>
+          <PaginationControls
+            currentPage={effectivePage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={rows.length}
+            itemLabel="staff members"
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+            }}
+          />
         </section>
       </main>
     </div>

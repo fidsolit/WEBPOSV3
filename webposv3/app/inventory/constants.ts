@@ -8,6 +8,7 @@ export const DEFAULT_NEW_ITEM_FORM: NewItemFormState = {
   name: "",
   barcode: "",
   stock: "",
+  minStock: "10",
   price: "",
   cost: "",
 };

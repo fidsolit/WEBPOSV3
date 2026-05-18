@@ -48,6 +48,7 @@ export interface NewItemFormState {
   name: string;
   barcode: string;
   stock: string;
+  minStock: string;
   price: string;
   cost: string;
 }

@@ -7,13 +7,14 @@ interface InventoryTableProps {
 
 export function InventoryTable({ items }: InventoryTableProps) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+    <div className="overflow-x-auto">
       <table className="w-full text-left">
         <thead className="bg-slate-50/50 text-xs font-semibold uppercase text-slate-400">
           <tr>
             <th className="px-8 py-5">Product Name</th>
             <th className="px-8 py-5">Barcode</th>
             <th className="px-8 py-5">Current Stock</th>
+            <th className="px-8 py-5">Alert Level</th>
             <th className="px-8 py-5">Unit Cost</th>
             <th className="px-8 py-5">Price</th>
           </tr>
@@ -37,6 +38,9 @@ export function InventoryTable({ items }: InventoryTableProps) {
                     {item.stock}
                   </span>
                 </td>
+                <td className="px-8 py-5 text-sm font-semibold text-slate-600">
+                  {item.min_stock ?? 0}
+                </td>
                 <td className="px-8 py-5 font-bold text-amber-600">
                   {formatCurrency(item.products?.cost)}
                 </td>
@@ -47,7 +51,7 @@ export function InventoryTable({ items }: InventoryTableProps) {
             ))
           ) : (
             <tr>
-              <td colSpan={5} className="px-8 py-10 text-center text-slate-400">
+              <td colSpan={6} className="px-8 py-10 text-center text-slate-400">
                 No products found.
               </td>
             </tr>

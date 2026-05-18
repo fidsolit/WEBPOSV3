@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Loader2, Plus, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../components/sidebar";
+import { PaginationControls } from "../components/pagination-controls";
 import { supabase } from "@/lib/supabaseClient";
 import { ModalShell } from "./components/modal-shell";
 import { InventoryTable } from "./components/inventory-table";
@@ -43,6 +44,8 @@ export default function Inventory() {
   const router = useRouter();
 
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [inventoryTotalCount, setInventoryTotalCount] = useState(0);
+  const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
 
@@ -55,13 +58,19 @@ export default function Inventory() {
 
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [activeBranchName, setActiveBranchName] = useState("Loading branch...");
+  const [inventoryPage, setInventoryPage] = useState(1);
 
   const [newItem, setNewItem] = useState(DEFAULT_NEW_ITEM_FORM);
   const [variantForm, setVariantForm] = useState(DEFAULT_VARIANT_FORM);
   const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
+  const inventoryPageSize = 10;
 
-  const fetchInventory = useCallback(async (branchId: string) => {
-    const { data, error } = await supabase
+  const fetchInventory = useCallback(
+    async (branchId: string, page = 1) => {
+      const from = (page - 1) * inventoryPageSize;
+      const to = from + inventoryPageSize - 1;
+
+      const { data, error, count } = await supabase
       .from("inventory")
       .select(
         `
@@ -77,17 +86,25 @@ export default function Inventory() {
             barcode
           )
         `,
+        { count: "exact" },
       )
       .eq("branch_id", branchId)
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      .range(from, to);
 
-    if (error) {
-      console.error("Supabase Error:", error.message);
-      return;
-    }
+      if (error) {
+        console.error("Supabase Error:", error.message);
+        return;
+      }
 
-    setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
-  }, []);
+      setInventoryPage(page);
+      if (count !== null) {
+        setInventoryTotalCount(count);
+      }
+      setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
+    },
+    [],
+  );
 
   const loadProductOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -101,6 +118,38 @@ export default function Inventory() {
     }
 
     setProductOptions((data as ProductOption[]) ?? []);
+  }, []);
+
+  const loadLowStockItems = useCallback(async (branchId: string) => {
+    const { data, error } = await supabase
+      .from("inventory")
+      .select(
+        `
+          id,
+          stock,
+          min_stock,
+          products (
+            id,
+            name,
+            price,
+            cost,
+            barcode
+          )
+        `,
+      )
+      .eq("branch_id", branchId)
+      .order("stock", { ascending: true })
+      .limit(8);
+
+    if (error) {
+      console.error("Failed loading low stock items:", error.message);
+      return;
+    }
+
+    const normalizedItems = normalizeInventoryRows((data as InventoryRow[]) ?? []);
+    setLowStockItems(
+      normalizedItems.filter((item) => item.stock <= (item.min_stock ?? 0)),
+    );
   }, []);
 
   const loadRecentLosses = useCallback(async (branchId: string) => {
@@ -234,14 +283,15 @@ export default function Inventory() {
       setActiveBranchId(branch.id);
       setActiveBranchName(branch.name);
       await Promise.all([
-        fetchInventory(branch.id),
+        fetchInventory(branch.id, 1),
+        loadLowStockItems(branch.id),
         loadProductOptions(),
         loadRecentLosses(branch.id),
       ]);
     };
 
     init();
-  }, [fetchInventory, loadProductOptions, loadRecentLosses, router]);
+  }, [fetchInventory, loadLowStockItems, loadProductOptions, loadRecentLosses, router]);
 
   const handleAddItem = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -254,6 +304,7 @@ export default function Inventory() {
     const parsedPrice = Number.parseFloat(newItem.price);
     const parsedCost = Number.parseFloat(newItem.cost);
     const parsedStock = Number.parseInt(newItem.stock, 10);
+    const parsedMinStock = Number.parseInt(newItem.minStock, 10);
 
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
       alert("Please enter a valid price.");
@@ -267,6 +318,11 @@ export default function Inventory() {
 
     if (!Number.isFinite(parsedCost) || parsedCost < 0) {
       alert("Please enter a valid unit cost.");
+      return;
+    }
+
+    if (!Number.isFinite(parsedMinStock) || parsedMinStock < 0) {
+      alert("Please enter a valid low stock threshold.");
       return;
     }
 
@@ -295,12 +351,16 @@ export default function Inventory() {
             product_id: product.id,
             branch_id: activeBranchId,
             stock: parsedStock,
+            min_stock: parsedMinStock,
           },
         ]);
 
       if (inventoryError) throw inventoryError;
 
-      await fetchInventory(activeBranchId);
+      await Promise.all([
+        fetchInventory(activeBranchId, 1),
+        loadLowStockItems(activeBranchId),
+      ]);
       setNewItem(DEFAULT_NEW_ITEM_FORM);
       setIsModalOpen(false);
     } catch (error) {
@@ -382,6 +442,10 @@ export default function Inventory() {
     setIsVariantModalOpen(false);
     setLoading(false);
     alert("Variant added successfully.");
+    await Promise.all([
+      fetchInventory(activeBranchId, 1),
+      loadLowStockItems(activeBranchId),
+    ]);
   };
 
   const handleLogLoss = async (event: React.FormEvent) => {
@@ -470,9 +534,22 @@ export default function Inventory() {
     setLoading(false);
 
     await Promise.all([
-      fetchInventory(activeBranchId),
+      fetchInventory(activeBranchId, inventoryPage),
+      loadLowStockItems(activeBranchId),
       loadRecentLosses(activeBranchId),
     ]);
+  };
+
+  const totalInventoryPages = Math.max(
+    1,
+    Math.ceil(inventoryTotalCount / inventoryPageSize),
+  );
+
+  const handleInventoryPageChange = async (page: number) => {
+    if (!activeBranchId) return;
+    const nextPage = Math.min(Math.max(page, 1), totalInventoryPages);
+    if (nextPage === inventoryPage) return;
+    await fetchInventory(activeBranchId, nextPage);
   };
 
   if (checkingAuth) {
@@ -529,7 +606,58 @@ export default function Inventory() {
           </div>
         </header>
 
-        <InventoryTable items={items} />
+        <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+          <InventoryTable items={items} />
+          <PaginationControls
+            currentPage={inventoryPage}
+            totalPages={totalInventoryPages}
+            pageSize={inventoryPageSize}
+            totalItems={inventoryTotalCount}
+            itemLabel="inventory items"
+            onPageChange={(page) => {
+              void handleInventoryPageChange(page);
+            }}
+          />
+        </div>
+        <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-5">
+            <h2 className="text-lg font-bold">Low Stock Alerts</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Items that have reached or dropped below their alert threshold.
+            </p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {lowStockItems.length > 0 ? (
+              lowStockItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-4 px-6 py-4"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      {item.products?.name || "Unknown product"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Barcode: {item.products?.barcode || "-"}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-rose-600">
+                      Stock: {item.stock}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Threshold: {item.min_stock ?? 0}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="px-6 py-8 text-sm text-slate-400">
+                No low stock alerts right now.
+              </p>
+            )}
+          </div>
+        </section>
         <RecentLossesTable recentLosses={recentLosses} />
       </main>
 
@@ -564,7 +692,7 @@ export default function Inventory() {
                 className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-500">
                   Unit Cost (PHP)
@@ -605,6 +733,20 @@ export default function Inventory() {
                   value={newItem.stock}
                   onChange={(event) =>
                     setNewItem({ ...newItem, stock: event.target.value })
+                  }
+                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-500">
+                  Low Stock Alert
+                </label>
+                <input
+                  required
+                  type="number"
+                  value={newItem.minStock}
+                  onChange={(event) =>
+                    setNewItem({ ...newItem, minStock: event.target.value })
                   }
                   className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
                 />

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Plus, Search, X } from "lucide-react";
+import { PaginationControls } from "../components/pagination-controls";
 import Sidebar from "../components/sidebar";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -68,18 +69,29 @@ export default function CustomersPage() {
   const [registeredCustomers, setRegisteredCustomers] = useState<
     RegisteredCustomer[]
   >([]);
+  const [registeredCustomersPage, setRegisteredCustomersPage] = useState(1);
+  const [registeredCustomersTotalCount, setRegisteredCustomersTotalCount] =
+    useState(0);
+  const [customerSummaryPage, setCustomerSummaryPage] = useState(1);
   const [customerForm, setCustomerForm] =
     useState<CustomerFormState>(EMPTY_CUSTOMER_FORM);
+  const registeredCustomersPageSize = 5;
+  const customerSummaryPageSize = 10;
 
   const loadRegisteredCustomers = useCallback(
-    async (branchId: string | null) => {
+    async (branchId: string | null, page = 1) => {
       if (!branchId) return;
-      const { data, error } = await supabase
+      const from = (page - 1) * registeredCustomersPageSize;
+      const to = from + registeredCustomersPageSize - 1;
+
+      const { data, error, count } = await supabase
         .from("customers")
-        .select("id, full_name, contact_number, email, address, notes")
+        .select("id, full_name, contact_number, email, address, notes", {
+          count: "exact",
+        })
         .eq("branch_id", branchId)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .range(from, to);
       if (error) {
         if (error.code === "42P01") {
           setCustomerFeatureReady(false);
@@ -89,6 +101,10 @@ export default function CustomersPage() {
         return;
       }
       setCustomerFeatureReady(true);
+      setRegisteredCustomersPage(page);
+      if (count !== null) {
+        setRegisteredCustomersTotalCount(count);
+      }
       setRegisteredCustomers((data as RegisteredCustomer[]) ?? []);
     },
     [],
@@ -152,7 +168,7 @@ export default function CustomersPage() {
       setActiveBranchId(resolvedBranchId);
       setCheckingAuth(false);
       await loadCustomerCredits();
-      await loadRegisteredCustomers(resolvedBranchId);
+      await loadRegisteredCustomers(resolvedBranchId, 1);
     };
     init();
   }, [loadCustomerCredits, loadRegisteredCustomers, router]);
@@ -196,6 +212,23 @@ export default function CustomersPage() {
       })
       .sort((a, b) => b.to_pay_amount - a.to_pay_amount);
   }, [rows, search]);
+
+  const totalRegisteredCustomersPages = Math.max(
+    1,
+    Math.ceil(registeredCustomersTotalCount / registeredCustomersPageSize),
+  );
+  const totalCustomerSummaryPages = Math.max(
+    1,
+    Math.ceil(customers.length / customerSummaryPageSize),
+  );
+  const effectiveCustomerSummaryPage = Math.min(
+    customerSummaryPage,
+    totalCustomerSummaryPages,
+  );
+  const paginatedCustomers = useMemo(() => {
+    const start = (effectiveCustomerSummaryPage - 1) * customerSummaryPageSize;
+    return customers.slice(start, start + customerSummaryPageSize);
+  }, [customerSummaryPageSize, customers, effectiveCustomerSummaryPage]);
 
   const sendSmsReminder = async (customer: CustomerSummary) => {
     if (!customer.contact_number) {
@@ -292,7 +325,7 @@ export default function CustomersPage() {
     }
     setIsAddCustomerOpen(false);
     setCustomerForm(EMPTY_CUSTOMER_FORM);
-    await loadRegisteredCustomers(branchId);
+    await loadRegisteredCustomers(branchId, 1);
   };
 
   const openEditCustomer = (customer: RegisteredCustomer) => {
@@ -338,7 +371,7 @@ export default function CustomersPage() {
       }
 
       closeCustomerModal();
-      await loadRegisteredCustomers(activeBranchId);
+      await loadRegisteredCustomers(activeBranchId, registeredCustomersPage);
       return;
     }
 
@@ -442,6 +475,19 @@ export default function CustomersPage() {
                 </p>
               )}
             </div>
+            <PaginationControls
+              currentPage={registeredCustomersPage}
+              totalPages={totalRegisteredCustomersPages}
+              pageSize={registeredCustomersPageSize}
+              totalItems={registeredCustomersTotalCount}
+              itemLabel="registered customers"
+              onPageChange={(page) => {
+                void loadRegisteredCustomers(
+                  activeBranchId,
+                  Math.min(Math.max(page, 1), totalRegisteredCustomersPages),
+                );
+              }}
+            />
           </div>
         )}
 
@@ -454,7 +500,10 @@ export default function CustomersPage() {
               />
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCustomerSummaryPage(1);
+                }}
                 placeholder="Search name or contact..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-600"
               />
@@ -484,7 +533,7 @@ export default function CustomersPage() {
                     </td>
                   </tr>
                 )}
-                {customers.map((customer) => (
+                {paginatedCustomers.map((customer) => (
                   <tr key={customer.key} className="hover:bg-slate-50/60">
                     <td className="px-6 py-4 font-semibold">
                       {customer.customer_name}
@@ -539,6 +588,16 @@ export default function CustomersPage() {
               </tbody>
             </table>
           </div>
+          <PaginationControls
+            currentPage={effectiveCustomerSummaryPage}
+            totalPages={totalCustomerSummaryPages}
+            pageSize={customerSummaryPageSize}
+            totalItems={customers.length}
+            itemLabel="customers"
+            onPageChange={(page) => {
+              setCustomerSummaryPage(page);
+            }}
+          />
         </div>
 
         {isAddCustomerOpen && (
