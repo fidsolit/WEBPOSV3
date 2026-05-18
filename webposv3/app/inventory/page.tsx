@@ -21,7 +21,11 @@ import type {
   ProductOption,
   RecentLossItem,
 } from "./types";
-import { buildRecentLossItems, normalizeInventoryRows } from "./utils";
+import {
+  buildRecentLossItems,
+  formatCurrency,
+  normalizeInventoryRows,
+} from "./utils";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -48,6 +52,8 @@ export default function Inventory() {
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
+  const [selectedLowStockItem, setSelectedLowStockItem] =
+    useState<InventoryItem | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
@@ -138,8 +144,7 @@ export default function Inventory() {
         `,
       )
       .eq("branch_id", branchId)
-      .order("stock", { ascending: true })
-      .limit(8);
+      .order("stock", { ascending: true });
 
     if (error) {
       console.error("Failed loading low stock items:", error.message);
@@ -148,7 +153,9 @@ export default function Inventory() {
 
     const normalizedItems = normalizeInventoryRows((data as InventoryRow[]) ?? []);
     setLowStockItems(
-      normalizedItems.filter((item) => item.stock <= (item.min_stock ?? 0)),
+      normalizedItems
+        .filter((item) => item.stock <= (item.min_stock ?? 0))
+        .slice(0, 8),
     );
   }, []);
 
@@ -629,9 +636,11 @@ export default function Inventory() {
           <div className="divide-y divide-slate-100">
             {lowStockItems.length > 0 ? (
               lowStockItems.map((item) => (
-                <div
+                <button
                   key={item.id}
-                  className="flex items-center justify-between gap-4 px-6 py-4"
+                  type="button"
+                  onClick={() => setSelectedLowStockItem(item)}
+                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition hover:bg-rose-50/60"
                 >
                   <div>
                     <p className="font-semibold text-slate-900">
@@ -639,6 +648,9 @@ export default function Inventory() {
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
                       Barcode: {item.products?.barcode || "-"}
+                    </p>
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-rose-500">
+                      Click to view item details
                     </p>
                   </div>
                   <div className="text-right">
@@ -649,7 +661,7 @@ export default function Inventory() {
                       Threshold: {item.min_stock ?? 0}
                     </p>
                   </div>
-                </div>
+                </button>
               ))
             ) : (
               <p className="px-6 py-8 text-sm text-slate-400">
@@ -889,6 +901,70 @@ export default function Inventory() {
               {loading ? "Saving..." : "Save Loss Record"}
             </button>
           </form>
+        </ModalShell>
+      )}
+
+      {selectedLowStockItem && (
+        <ModalShell
+          title="Low Stock Item Details"
+          onClose={() => setSelectedLowStockItem(null)}
+        >
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Product
+              </p>
+              <p className="mt-1 text-lg font-bold text-slate-900">
+                {selectedLowStockItem.products?.name || "Unknown product"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl bg-rose-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-500">
+                  Current Stock
+                </p>
+                <p className="mt-1 text-2xl font-bold text-rose-600">
+                  {selectedLowStockItem.stock}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-amber-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+                  Alert Threshold
+                </p>
+                <p className="mt-1 text-2xl font-bold text-amber-700">
+                  {selectedLowStockItem.min_stock ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Barcode
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">
+                  {selectedLowStockItem.products?.barcode || "-"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Unit Cost
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">
+                  {formatCurrency(selectedLowStockItem.products?.cost)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4 sm:col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Selling Price
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">
+                  {formatCurrency(selectedLowStockItem.products?.price)}
+                </p>
+              </div>
+            </div>
+          </div>
         </ModalShell>
       )}
     </div>
