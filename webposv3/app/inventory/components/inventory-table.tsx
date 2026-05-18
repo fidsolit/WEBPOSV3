@@ -3,9 +3,13 @@ import { formatCurrency } from "../utils";
 
 interface InventoryTableProps {
   items: InventoryItem[];
+  highlightedItemId?: string | null;
 }
 
-export function InventoryTable({ items }: InventoryTableProps) {
+export function InventoryTable({
+  items,
+  highlightedItemId = null,
+}: InventoryTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left">
@@ -22,7 +26,12 @@ export function InventoryTable({ items }: InventoryTableProps) {
         <tbody className="divide-y divide-slate-50">
           {items.length > 0 ? (
             items.map((item) => (
-              <tr key={item.id} className="transition-colors hover:bg-slate-50/50">
+              <tr
+                key={item.id}
+                className={`transition-colors hover:bg-slate-50/50 ${
+                  item.id === highlightedItemId ? "bg-rose-50/70" : ""
+                }`}
+              >
                 <td className="px-8 py-5 font-bold">
                   {item.products?.name || "Unknown"}
                 </td>

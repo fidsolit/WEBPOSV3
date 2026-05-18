@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Plus, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../components/sidebar";
@@ -54,6 +54,8 @@ export default function Inventory() {
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
   const [selectedLowStockItem, setSelectedLowStockItem] =
     useState<InventoryItem | null>(null);
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
@@ -70,6 +72,7 @@ export default function Inventory() {
   const [variantForm, setVariantForm] = useState(DEFAULT_VARIANT_FORM);
   const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
   const inventoryPageSize = 10;
+  const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
   const fetchInventory = useCallback(
     async (branchId: string, page = 1) => {
@@ -153,9 +156,7 @@ export default function Inventory() {
 
     const normalizedItems = normalizeInventoryRows((data as InventoryRow[]) ?? []);
     setLowStockItems(
-      normalizedItems
-        .filter((item) => item.stock <= (item.min_stock ?? 0))
-        .slice(0, 8),
+      normalizedItems.filter((item) => item.stock <= (item.min_stock ?? 0)),
     );
   }, []);
 
@@ -551,12 +552,26 @@ export default function Inventory() {
     1,
     Math.ceil(inventoryTotalCount / inventoryPageSize),
   );
+  const visibleLowStockItems = useMemo(() => lowStockItems.slice(0, 8), [lowStockItems]);
+  const displayedInventoryItems = showLowStockOnly ? lowStockItems : items;
 
   const handleInventoryPageChange = async (page: number) => {
     if (!activeBranchId) return;
     const nextPage = Math.min(Math.max(page, 1), totalInventoryPages);
     if (nextPage === inventoryPage) return;
     await fetchInventory(activeBranchId, nextPage);
+  };
+
+  const handleLowStockAlertClick = (item: InventoryItem) => {
+    setShowLowStockOnly(true);
+    setHighlightedItemId(item.id);
+    setSelectedLowStockItem(item);
+    window.setTimeout(() => {
+      inventoryTableRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   };
 
   if (checkingAuth) {
@@ -613,18 +628,50 @@ export default function Inventory() {
           </div>
         </header>
 
-        <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
-          <InventoryTable items={items} />
-          <PaginationControls
-            currentPage={inventoryPage}
-            totalPages={totalInventoryPages}
-            pageSize={inventoryPageSize}
-            totalItems={inventoryTotalCount}
-            itemLabel="inventory items"
-            onPageChange={(page) => {
-              void handleInventoryPageChange(page);
-            }}
+        <div
+          ref={inventoryTableRef}
+          className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-bold">Inventory Items</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {showLowStockOnly
+                  ? "Showing only items currently in low-stock alert."
+                  : "Showing the paginated inventory list for this branch."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowLowStockOnly((current) => !current);
+                setHighlightedItemId(null);
+              }}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                showLowStockOnly
+                  ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {showLowStockOnly ? "Show All Inventory" : "Show Low Stocks"}
+            </button>
+          </div>
+          <InventoryTable
+            items={displayedInventoryItems}
+            highlightedItemId={highlightedItemId}
           />
+          {!showLowStockOnly && (
+            <PaginationControls
+              currentPage={inventoryPage}
+              totalPages={totalInventoryPages}
+              pageSize={inventoryPageSize}
+              totalItems={inventoryTotalCount}
+              itemLabel="inventory items"
+              onPageChange={(page) => {
+                void handleInventoryPageChange(page);
+              }}
+            />
+          )}
         </div>
         <section className="mt-6 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-5">
@@ -635,11 +682,11 @@ export default function Inventory() {
           </div>
           <div className="divide-y divide-slate-100">
             {lowStockItems.length > 0 ? (
-              lowStockItems.map((item) => (
+              visibleLowStockItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setSelectedLowStockItem(item)}
+                  onClick={() => handleLowStockAlertClick(item)}
                   className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left transition hover:bg-rose-50/60"
                 >
                   <div>
@@ -650,7 +697,7 @@ export default function Inventory() {
                       Barcode: {item.products?.barcode || "-"}
                     </p>
                     <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-rose-500">
-                      Click to view item details
+                      Click to show in inventory list
                     </p>
                   </div>
                   <div className="text-right">
@@ -967,6 +1014,7 @@ export default function Inventory() {
           </div>
         </ModalShell>
       )}
+
     </div>
   );
 }

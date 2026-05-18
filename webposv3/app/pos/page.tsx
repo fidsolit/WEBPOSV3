@@ -358,9 +358,7 @@ export default function POSDashboard() {
             created_at: string;
             status: "saved" | "completed" | "void";
           }[]) ?? []
-        ).filter(
-          (sale) => sale.status === "completed",
-        );
+        ).filter((sale) => sale.status === "completed");
         setRevenue(
           completedSales.reduce((acc, sale) => acc + Number(sale.total), 0),
         );
@@ -1352,7 +1350,8 @@ export default function POSDashboard() {
               <p className="text-sm text-slate-500">
                 Showing{" "}
                 <span className="font-semibold text-slate-700">
-                  {(recentTransactionsPage - 1) * recentTransactionsPageSize + 1}
+                  {(recentTransactionsPage - 1) * recentTransactionsPageSize +
+                    1}
                 </span>{" "}
                 to{" "}
                 <span className="font-semibold text-slate-700">
@@ -1699,6 +1698,7 @@ export default function POSDashboard() {
                   <button
                     disabled={submittingSale || cart.length === 0}
                     onClick={handleAddNewSale}
+                    hidden={Number(cashAmount) < cartSubtotal}
                     className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
                   >
                     {submittingSale ? "Processing..." : "Complete Sale"}
