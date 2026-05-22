@@ -359,6 +359,7 @@ Purpose:
 
 Important fields:
 
+
 - `branch_id`
 - `product_id`
 - `movement_type`
