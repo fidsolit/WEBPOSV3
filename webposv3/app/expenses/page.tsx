@@ -2,16 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Loader2,
-  Plus,
-  Search,
-  X,
-  Calendar,
-  Wallet,
-  FileText,
-  Tag,
-} from "lucide-react";
+import { Loader2, Plus, Search, X } from "lucide-react";
 import { PaginationControls } from "../components/pagination-controls";
 import Sidebar from "../components/sidebar";
 import { supabase } from "@/lib/supabaseClient";
@@ -39,6 +30,11 @@ interface ExpenseRow {
   created_at: string;
 }
 
+interface ProfileRow {
+  id: string;
+  full_name: string | null;
+}
+
 interface ExpenseFormState {
   amount: string;
   category: ExpenseCategory;
@@ -64,7 +60,7 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ExpenseRow[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [activeBranchId, setActiveBranchId] = useState<string | null>(null); // Kept for layout context compliance
+  const [userNamesById, setUserNamesById] = useState<Record<string, string>>({});
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [expenseFeatureReady, setExpenseFeatureReady] = useState(true);
@@ -92,7 +88,38 @@ export default function ExpensesPage() {
       }
     } else {
       setExpenseFeatureReady(true);
-      setRows((data as ExpenseRow[]) ?? []);
+      const expenseRows = (data as ExpenseRow[]) ?? [];
+      setRows(expenseRows);
+
+      const uniqueUserIds = Array.from(
+        new Set(
+          expenseRows
+            .map((expense) => expense.created_by)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      );
+
+      if (uniqueUserIds.length === 0) {
+        setUserNamesById({});
+      } else {
+        const { data: profileRows, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", uniqueUserIds);
+
+        if (profileError) {
+          console.error("Failed to fetch expense user names:", profileError.message);
+          setUserNamesById({});
+        } else {
+          const nameMap = ((profileRows as ProfileRow[] | null) ?? []).reduce<
+            Record<string, string>
+          >((acc, profile) => {
+            acc[profile.id] = profile.full_name?.trim() || `User ${profile.id.slice(0, 8)}`;
+            return acc;
+          }, {});
+          setUserNamesById(nameMap);
+        }
+      }
     }
     setLoading(false);
   }, []);
@@ -108,14 +135,6 @@ export default function ExpensesPage() {
       }
       setCurrentUserId(user.id);
 
-      // Fetch branch context to keep parity with application layout defaults
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("branch_id")
-        .eq("id", user.id)
-        .single();
-
-      setActiveBranchId(profile?.branch_id ?? null);
       setCheckingAuth(false);
       await loadExpenses();
     };
@@ -135,10 +154,11 @@ export default function ExpensesPage() {
         exp.description.toLowerCase().includes(query) ||
         exp.category.toLowerCase().includes(query) ||
         exp.payment_method.toLowerCase().includes(query) ||
-        exp.reference_no?.toLowerCase().includes(query)
+        exp.reference_no?.toLowerCase().includes(query) ||
+        userNamesById[exp.created_by ?? ""]?.toLowerCase().includes(query)
       );
     });
-  }, [rows, search]);
+  }, [rows, search, userNamesById]);
 
   const totalExpenseAmount = useMemo(() => {
     return filteredExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
@@ -330,6 +350,7 @@ export default function ExpensesPage() {
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Description</th>
                     <th className="px-6 py-4">Method</th>
+                    <th className="px-6 py-4">Logged By</th>
                     <th className="px-6 py-4">Ref No.</th>
                     <th className="px-6 py-4">Amount</th>
                     <th className="px-6 py-4 text-right">Actions</th>
@@ -339,7 +360,7 @@ export default function ExpensesPage() {
                   {loading ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-6 py-10 text-center text-slate-400"
                       >
                         <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
@@ -348,7 +369,7 @@ export default function ExpensesPage() {
                   ) : paginatedExpenses.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={7}
+                        colSpan={8}
                         className="px-6 py-10 text-center text-slate-400"
                       >
                         No recorded expenses match your parameters.
@@ -376,6 +397,12 @@ export default function ExpensesPage() {
                         </td>
                         <td className="px-6 py-4 text-slate-600">
                           {expense.payment_method}
+                        </td>
+                        <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
+                          {expense.created_by
+                            ? (userNamesById[expense.created_by] ??
+                              `User ${expense.created_by.slice(0, 8)}`)
+                            : "-"}
                         </td>
                         <td className="px-6 py-4 text-slate-500 font-mono text-xs">
                           {expense.reference_no || "-"}

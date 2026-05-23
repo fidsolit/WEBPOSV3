@@ -15,6 +15,7 @@ import {
   Users,
   UserCog,
   ChartColumn,
+  Receipt,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -92,7 +93,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
         />
         <SidebarItem
           href="/expenses"
-          icon={<Users size={20} />}
+          icon={<Receipt size={20} />}
           label="Expenses"
           active={pathname === "/expenses"}
         />
