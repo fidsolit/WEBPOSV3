@@ -90,6 +90,13 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           label="Customers"
           active={pathname === "/customers"}
         />
+        <SidebarItem
+          href="/expenses"
+          icon={<Users size={20} />}
+          label="Expenses"
+          active={pathname === "/expenses"}
+        />
+
         {role === "admin" && (
           <>
             <SidebarItem
