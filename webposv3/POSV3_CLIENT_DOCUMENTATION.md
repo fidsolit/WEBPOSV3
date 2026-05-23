@@ -19,9 +19,10 @@ POS V3 is built to help the business:
 - monitor low-stock products before they run out
 - record stock refills and stock losses properly
 - manage customer credit and reminders
+- record operating expenses
 - control staff roles and access
 - review recent user activity
-- analyze sales and profit performance
+- analyze sales, expenses, and profit performance
 
 ## 3. User Roles
 
@@ -35,6 +36,7 @@ Admin can:
 - create and manage sales
 - manage customers
 - manage inventory
+- manage expenses
 - receive deliveries
 - log stock losses
 - review inventory history
@@ -53,6 +55,7 @@ Cashier can:
 
 - log in to the POS
 - process sales
+- log and review expenses
 - view working dashboard information allowed by the system
 - use customer-related functions that are available in their role flow
 
@@ -337,13 +340,17 @@ Functions:
 
 - total revenue reporting
 - total cost of goods reporting
-- total net profit reporting
+- total operating expense reporting
+- gross profit reporting
+- total net profit reporting after expenses
 - daily profit metrics
 - weekly profit metrics
 - monthly profit metrics
 - yearly profit metrics
+- expense-aware financial summary
 - top-selling items
 - recent completed transactions
+- recent logged expenses
 - card view
 - graph view
 
@@ -351,8 +358,35 @@ Benefits:
 
 - supports better decision-making
 - tracks profitability and performance
+- helps monitor business outflows alongside sales
 
-### 4.14 Settings Module
+### 4.14 Expenses Module
+
+This module allows the business to record and monitor store operating expenses.
+
+Functions:
+
+- log new expense entries
+- edit existing expense records
+- delete expense records
+- categorize expenses
+- record payment method
+- record receipt or invoice reference number
+- record expense date
+- record detailed expense description
+- display who logged each expense
+- search expenses by description, category, reference, payment method, and user
+- paginated expense table
+- filtered expense total summary
+
+Benefits:
+
+- improves tracking of store outflows
+- supports accountability through user-based logging
+- gives management cleaner operating expense records
+- feeds more accurate profit reporting
+
+### 4.15 Settings Module
 
 This module provides access to system settings and configuration area for admin use.
 
