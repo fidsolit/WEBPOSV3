@@ -2,7 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, LayoutGrid, Loader2 } from "lucide-react";
+import {
+  BarChart3,
+  LayoutGrid,
+  Loader2,
+  ReceiptText,
+  TrendingDown,
+  Wallet,
+} from "lucide-react";
 import Sidebar from "../components/sidebar";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -25,11 +32,22 @@ interface SaleItemRow {
     | null;
 }
 
+interface ExpenseRow {
+  id: string;
+  amount: number;
+  category: string;
+  description: string;
+  expense_date: string;
+  created_at: string;
+}
+
 interface ProfitMetric {
   label: string;
   revenue: number;
   cogs: number;
-  profit: number;
+  grossProfit: number;
+  expenses: number;
+  netProfit: number;
   transactions: number;
 }
 
@@ -58,6 +76,7 @@ export default function ReportsPage() {
   const [recentTransactions, setRecentTransactions] = useState<
     RecentReportTransaction[]
   >([]);
+  const [recentExpenses, setRecentExpenses] = useState<ExpenseRow[]>([]);
   const [viewMode, setViewMode] = useState<"cards" | "graph">("cards");
 
   useEffect(() => {
@@ -106,19 +125,37 @@ export default function ReportsPage() {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startOfYear = new Date(now.getFullYear(), 0, 1);
 
-      const { data: salesData, error: salesError } = await supabase
-        .from("sales")
-        .select("id, total, status, created_at")
-        .eq("status", "completed")
-        .gte("created_at", startOfYear.toISOString());
+      const [salesResult, expensesResult] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("id, total, status, created_at")
+          .eq("status", "completed")
+          .gte("created_at", startOfYear.toISOString()),
+        supabase
+          .from("expenses")
+          .select("id, amount, category, description, expense_date, created_at")
+          .gte("expense_date", startOfYear.toISOString().slice(0, 10))
+          .order("expense_date", { ascending: false })
+          .order("created_at", { ascending: false }),
+      ]);
 
+      const { data: salesData, error: salesError } = salesResult;
       if (salesError) {
         console.error("Failed to load report sales:", salesError.message);
         setLoading(false);
         return;
       }
 
+      const { data: expensesData, error: expensesError } = expensesResult;
+      if (expensesError && expensesError.code !== "42P01") {
+        console.error("Failed to load report expenses:", expensesError.message);
+        setLoading(false);
+        return;
+      }
+
       const sales = (salesData as SaleRow[]) ?? [];
+      const expenses =
+        expensesError?.code === "42P01" ? [] : ((expensesData as ExpenseRow[]) ?? []);
       const saleIds = sales.map((sale) => sale.id);
 
       let cogsBySale = new Map<string, number>();
@@ -203,16 +240,23 @@ export default function ReportsPage() {
           };
         });
       setRecentTransactions(latest);
+      setRecentExpenses(expenses.slice(0, 5));
 
       const computeMetric = (label: string, from: Date): ProfitMetric => {
         const scoped = sales.filter((sale) => new Date(sale.created_at) >= from);
         const revenue = scoped.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
         const cogs = scoped.reduce((sum, sale) => sum + (cogsBySale.get(sale.id) ?? 0), 0);
+        const grossProfit = revenue - cogs;
+        const scopedExpenses = expenses
+          .filter((expense) => new Date(`${expense.expense_date}T00:00:00`) >= from)
+          .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
         return {
           label,
           revenue,
           cogs,
-          profit: revenue - cogs,
+          grossProfit,
+          expenses: scopedExpenses,
+          netProfit: grossProfit - scopedExpenses,
           transactions: scoped.length,
         };
       };
@@ -239,23 +283,47 @@ export default function ReportsPage() {
   );
 
   const highestRevenue = useMemo(
-    () => Math.max(...metrics.map((metric) => metric.revenue), 1),
+    () =>
+      Math.max(
+        ...metrics.flatMap((metric) => [
+          metric.revenue,
+          metric.cogs,
+          metric.expenses,
+          Math.abs(metric.netProfit),
+        ]),
+        1,
+      ),
     [metrics],
   );
 
-  const totalProfit = useMemo(
-    () => metrics.reduce((sum, metric) => sum + metric.profit, 0),
+  const summaryMetric = useMemo(
+    () => metrics.find((metric) => metric.label === "Yearly") ?? metrics[0] ?? null,
     [metrics],
   );
 
   const totalRevenue = useMemo(
-    () => metrics.reduce((sum, metric) => sum + metric.revenue, 0),
-    [metrics],
+    () => summaryMetric?.revenue ?? 0,
+    [summaryMetric],
   );
 
   const totalCogs = useMemo(
-    () => metrics.reduce((sum, metric) => sum + metric.cogs, 0),
-    [metrics],
+    () => summaryMetric?.cogs ?? 0,
+    [summaryMetric],
+  );
+
+  const totalExpenses = useMemo(
+    () => summaryMetric?.expenses ?? 0,
+    [summaryMetric],
+  );
+
+  const totalGrossProfit = useMemo(
+    () => summaryMetric?.grossProfit ?? 0,
+    [summaryMetric],
+  );
+
+  const totalProfit = useMemo(
+    () => summaryMetric?.netProfit ?? 0,
+    [summaryMetric],
   );
 
   if (checkingAuth) {
@@ -274,7 +342,7 @@ export default function ReportsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Profit Reports</h1>
             <p className="text-slate-500 mt-1">
-              Professional profit analytics from revenue and unit cost.
+              Revenue, cost, expenses, and operating profit in one year-to-date view.
             </p>
           </div>
           <div className="bg-white border border-slate-200 rounded-2xl p-1 inline-flex">
@@ -309,7 +377,7 @@ export default function ReportsPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                   Total Revenue
@@ -328,6 +396,14 @@ export default function ReportsPage() {
               </div>
               <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Operating Expenses
+                </p>
+                <p className="text-2xl font-bold mt-2 text-rose-600">
+                  {currency.format(totalExpenses)}
+                </p>
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                   Net Profit
                 </p>
                 <p
@@ -337,6 +413,102 @@ export default function ReportsPage() {
                 >
                   {currency.format(totalProfit)}
                 </p>
+              </div>
+            </section>
+
+            <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 xl:col-span-2">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-bold">Financial Summary</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Gross profit minus operating expenses gives net profit.
+                    </p>
+                  </div>
+                  <ReceiptText className="h-5 w-5 text-slate-400" />
+                </div>
+                <p className="mb-4 text-xs text-slate-500">
+                  Summary cards above reflect the <strong>Yearly</strong> period to avoid
+                  double-counting overlapping daily, weekly, and monthly data.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <div className="flex items-center gap-2 text-slate-500 text-xs font-semibold uppercase tracking-wide">
+                      <Wallet className="h-4 w-4" />
+                      Gross Profit
+                    </div>
+                    <p className="mt-3 text-2xl font-bold text-slate-900">
+                      {currency.format(totalGrossProfit)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Revenue less cost of goods sold
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-rose-50 border border-rose-100 p-4">
+                    <div className="flex items-center gap-2 text-rose-600 text-xs font-semibold uppercase tracking-wide">
+                      <TrendingDown className="h-4 w-4" />
+                      Expenses
+                    </div>
+                    <p className="mt-3 text-2xl font-bold text-rose-600">
+                      {currency.format(totalExpenses)}
+                    </p>
+                    <p className="mt-1 text-xs text-rose-500">
+                      Logged store operating expenses
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-4">
+                    <div className="flex items-center gap-2 text-emerald-600 text-xs font-semibold uppercase tracking-wide">
+                      <BarChart3 className="h-4 w-4" />
+                      Net Profit
+                    </div>
+                    <p
+                      className={`mt-3 text-2xl font-bold ${
+                        totalProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                      }`}
+                    >
+                      {currency.format(totalProfit)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Gross profit after expenses
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold">Recent Expenses</h2>
+                  <p className="text-xs text-slate-500">Latest logged outflows</p>
+                </div>
+                {recentExpenses.length > 0 ? (
+                  <div className="space-y-3">
+                    {recentExpenses.map((expense) => (
+                      <div
+                        key={expense.id}
+                        className="rounded-2xl border border-slate-100 px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              {expense.description}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {expense.category} •{" "}
+                              {new Date(expense.expense_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <p className="text-sm font-bold text-rose-600 whitespace-nowrap">
+                            {currency.format(Number(expense.amount || 0))}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    No expenses logged yet or the expenses table is not available.
+                  </p>
+                )}
               </div>
             </section>
 
@@ -453,17 +625,37 @@ export default function ReportsPage() {
                         </span>
                       </div>
                       <div className="flex justify-between">
+                        <span className="text-slate-500">Gross Profit</span>
+                        <span
+                          className={`font-semibold ${
+                            metric.grossProfit >= 0
+                              ? "text-emerald-600"
+                              : "text-rose-600"
+                          }`}
+                        >
+                          {currency.format(metric.grossProfit)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Expenses</span>
+                        <span className="font-semibold text-rose-600">
+                          {currency.format(metric.expenses)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className="text-slate-500">Transactions</span>
                         <span className="font-semibold">{metric.transactions}</span>
                       </div>
                       <div className="border-t pt-2 mt-2 flex justify-between">
-                        <span className="font-bold">Profit</span>
+                        <span className="font-bold">Net Profit</span>
                         <span
                           className={`font-bold ${
-                            metric.profit >= 0 ? "text-emerald-600" : "text-rose-600"
+                            metric.netProfit >= 0
+                              ? "text-emerald-600"
+                              : "text-rose-600"
                           }`}
                         >
-                          {currency.format(metric.profit)}
+                          {currency.format(metric.netProfit)}
                         </span>
                       </div>
                     </div>
@@ -480,10 +672,14 @@ export default function ReportsPage() {
                       (metric.revenue / highestRevenue) * 100,
                     );
                     const cogsWidth = Math.max(6, (metric.cogs / highestRevenue) * 100);
-                    const profitBase = Math.abs(metric.profit);
-                    const profitWidth = Math.max(
+                    const expensesWidth = Math.max(
                       6,
-                      (profitBase / highestRevenue) * 100,
+                      (metric.expenses / highestRevenue) * 100,
+                    );
+                    const netProfitBase = Math.abs(metric.netProfit);
+                    const netProfitWidth = Math.max(
+                      6,
+                      (netProfitBase / highestRevenue) * 100,
                     );
 
                     return (
@@ -519,18 +715,33 @@ export default function ReportsPage() {
                         <div>
                           <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
                             <div
+                              className="h-full bg-fuchsia-500"
+                              style={{ width: `${expensesWidth}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Expenses: {currency.format(metric.expenses)}
+                          </p>
+                        </div>
+                        <div>
+                          <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
+                            <div
                               className={`h-full ${
-                                metric.profit >= 0 ? "bg-emerald-500" : "bg-rose-500"
+                                metric.netProfit >= 0
+                                  ? "bg-emerald-500"
+                                  : "bg-rose-500"
                               }`}
-                              style={{ width: `${profitWidth}%` }}
+                              style={{ width: `${netProfitWidth}%` }}
                             />
                           </div>
                           <p
                             className={`text-xs mt-1 ${
-                              metric.profit >= 0 ? "text-emerald-600" : "text-rose-600"
+                              metric.netProfit >= 0
+                                ? "text-emerald-600"
+                                : "text-rose-600"
                             }`}
                           >
-                            Profit: {currency.format(metric.profit)}
+                            Net Profit: {currency.format(metric.netProfit)}
                           </p>
                         </div>
                       </div>
@@ -547,12 +758,16 @@ export default function ReportsPage() {
                     Cost of Goods
                   </span>
                   <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-fuchsia-500 inline-block" />
+                    Expenses
+                  </span>
+                  <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-                    Profit (positive)
+                    Net Profit (positive)
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" />
-                    Profit (negative)
+                    Net Profit (negative)
                   </span>
                 </div>
               </section>
