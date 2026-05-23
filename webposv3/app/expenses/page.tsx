@@ -1,11 +1,591 @@
-import React from "react";
+"use client";
 
-function page() {
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Loader2,
+  Plus,
+  Search,
+  X,
+  Calendar,
+  Wallet,
+  FileText,
+  Tag,
+} from "lucide-react";
+import { PaginationControls } from "../components/pagination-controls";
+import Sidebar from "../components/sidebar";
+import { supabase } from "@/lib/supabaseClient";
+
+// 1. Core Types matching the public.expenses schema
+type ExpenseCategory =
+  | "Utilities"
+  | "Supplier"
+  | "Rent"
+  | "Salaries"
+  | "Marketing"
+  | "Maintenance"
+  | "Spoilage/Loss"
+  | "Miscellaneous";
+
+interface ExpenseRow {
+  id: string;
+  amount: number;
+  category: ExpenseCategory;
+  description: string;
+  expense_date: string;
+  payment_method: string;
+  reference_no: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+interface ExpenseFormState {
+  amount: string;
+  category: ExpenseCategory;
+  description: string;
+  expenseDate: string;
+  paymentMethod: string;
+  referenceNo: string;
+}
+
+const EMPTY_EXPENSE_FORM: ExpenseFormState = {
+  amount: "",
+  category: "Miscellaneous",
+  description: "",
+  expenseDate: new Date().toISOString().slice(0, 10), // Default to today
+  paymentMethod: "Cash",
+  referenceNo: "",
+};
+
+export default function ExpensesPage() {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState<ExpenseRow[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [activeBranchId, setActiveBranchId] = useState<string | null>(null); // Kept for layout context compliance
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseFeatureReady, setExpenseFeatureReady] = useState(true);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  // 2. Fetch and Sync Handlers
+  const loadExpenses = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("expenses")
+      .select(
+        "id, amount, category, description, expense_date, payment_method, reference_no, created_by, created_at",
+      )
+      .order("expense_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      if (error.code === "42P01") {
+        setExpenseFeatureReady(false);
+      } else {
+        alert(error.message);
+      }
+    } else {
+      setExpenseFeatureReady(true);
+      setRows((data as ExpenseRow[]) ?? []);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/auth/login");
+        return;
+      }
+      setCurrentUserId(user.id);
+
+      // Fetch branch context to keep parity with application layout defaults
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("branch_id")
+        .eq("id", user.id)
+        .single();
+
+      setActiveBranchId(profile?.branch_id ?? null);
+      setCheckingAuth(false);
+      await loadExpenses();
+    };
+    init();
+  }, [loadExpenses, router]);
+
+  // Form State Handler
+  const [expenseForm, setExpenseForm] =
+    useState<ExpenseFormState>(EMPTY_EXPENSE_FORM);
+
+  // 3. Computed Metrics: Filtering, Aggregations, and Searching
+  const filteredExpenses = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return rows.filter((exp) => {
+      if (!query) return true;
+      return (
+        exp.description.toLowerCase().includes(query) ||
+        exp.category.toLowerCase().includes(query) ||
+        exp.payment_method.toLowerCase().includes(query) ||
+        exp.reference_no?.toLowerCase().includes(query)
+      );
+    });
+  }, [rows, search]);
+
+  const totalExpenseAmount = useMemo(() => {
+    return filteredExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+  }, [filteredExpenses]);
+
+  // Pagination bounds checking
+  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / pageSize));
+  const effectivePage = Math.min(currentPage, totalPages);
+
+  const paginatedExpenses = useMemo(() => {
+    const start = (effectivePage - 1) * pageSize;
+    return filteredExpenses.slice(start, start + pageSize);
+  }, [filteredExpenses, effectivePage, pageSize]);
+
+  // 4. Mutation Handlers: Create, Update, Delete
+  const handleSaveExpense = async () => {
+    if (!currentUserId) return alert("Missing user context.");
+    if (!expenseForm.amount || parseFloat(expenseForm.amount) <= 0) {
+      return alert("Please enter a valid amount greater than 0.");
+    }
+    if (!expenseForm.description.trim()) {
+      return alert("Description is required.");
+    }
+
+    const payload = {
+      amount: parseFloat(expenseForm.amount),
+      category: expenseForm.category,
+      description: expenseForm.description.trim(),
+      expense_date: expenseForm.expenseDate,
+      payment_method: expenseForm.paymentMethod,
+      reference_no: expenseForm.referenceNo.trim() || null,
+    };
+
+    if (editingExpenseId) {
+      // Update logic
+      const { error } = await supabase
+        .from("expenses")
+        .update({
+          ...payload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingExpenseId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+    } else {
+      // Create logic
+      const { error } = await supabase.from("expenses").insert([
+        {
+          ...payload,
+          created_by: currentUserId,
+        },
+      ]);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+    }
+
+    closeExpenseModal();
+    await loadExpenses();
+  };
+
+  const openEditExpense = (expense: ExpenseRow) => {
+    setEditingExpenseId(expense.id);
+    setExpenseForm({
+      amount: expense.amount.toString(),
+      category: expense.category,
+      description: expense.description,
+      expenseDate: expense.expense_date,
+      paymentMethod: expense.payment_method,
+      referenceNo: expense.reference_no ?? "",
+    });
+    setIsAddExpenseOpen(true);
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this expense record?",
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("expenses").delete().eq("id", id);
+    if (error) {
+      alert(error.message);
+    } else {
+      await loadExpenses();
+    }
+  };
+
+  const closeExpenseModal = () => {
+    setIsAddExpenseOpen(false);
+    setEditingExpenseId(null);
+    setExpenseForm(EMPTY_EXPENSE_FORM);
+  };
+
+  if (checkingAuth) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <p> expense page</p>
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+      <Sidebar />
+      <main className="flex-1 overflow-y-auto p-6 md:p-10">
+        {/* Header section */}
+        <header className="mb-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-bold">Expenses</h1>
+              <p className="text-slate-500 mt-1">
+                Log operating costs, shop utilities, and balance store outflows.
+              </p>
+            </div>
+            {expenseFeatureReady && (
+              <button
+                onClick={() => setIsAddExpenseOpen(true)}
+                className="px-5 py-3 rounded-2xl bg-blue-600 text-white font-semibold inline-flex items-center gap-2 shadow-sm hover:bg-blue-700 transition"
+              >
+                <Plus size={16} />
+                Log Expense
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Database validation warning alert */}
+        {!expenseFeatureReady && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl text-sm">
+            <strong>Expenses table missing.</strong> Please execute your table
+            generation DDL migration file inside your Supabase SQL editor to
+            initialize this feature.
+          </div>
+        )}
+
+        {/* Financial KPI Summary Card */}
+        {expenseFeatureReady && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Total Filtered Outflow
+              </p>
+              <h3 className="text-2xl font-bold mt-2 text-rose-600">
+                ₱
+                {totalExpenseAmount.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Summing {filteredExpenses.length} entries
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Main interactive data container */}
+        {expenseFeatureReady && (
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <div className="relative max-w-md">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Search description, category, reference..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-600 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50/60 text-slate-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-6 py-4">Date</th>
+                    <th className="px-6 py-4">Category</th>
+                    <th className="px-6 py-4">Description</th>
+                    <th className="px-6 py-4">Method</th>
+                    <th className="px-6 py-4">Ref No.</th>
+                    <th className="px-6 py-4">Amount</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {loading ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-10 text-center text-slate-400"
+                      >
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
+                      </td>
+                    </tr>
+                  ) : paginatedExpenses.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-6 py-10 text-center text-slate-400"
+                      >
+                        No recorded expenses match your parameters.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedExpenses.map((expense) => (
+                      <tr
+                        key={expense.id}
+                        className="hover:bg-slate-50/60 transition-colors"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {new Date(expense.expense_date).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+                            {expense.category}
+                          </span>
+                        </td>
+                        <td
+                          className="px-6 py-4 font-medium max-w-xs truncate"
+                          title={expense.description}
+                        >
+                          {expense.description}
+                        </td>
+                        <td className="px-6 py-4 text-slate-600">
+                          {expense.payment_method}
+                        </td>
+                        <td className="px-6 py-4 text-slate-500 font-mono text-xs">
+                          {expense.reference_no || "-"}
+                        </td>
+                        <td className="px-6 py-4 font-bold text-rose-600">
+                          ₱{Number(expense.amount).toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => openEditExpense(expense)}
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExpense(expense.id)}
+                              className="rounded-lg border border-transparent px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <PaginationControls
+              currentPage={effectivePage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredExpenses.length}
+              itemLabel="expenses"
+              onPageChange={(page) => setCurrentPage(page)}
+            />
+          </div>
+        )}
+
+        {/* Action Modal Form (Handles Insertion & Correction Updates) */}
+        {isAddExpenseOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">
+                  {editingExpenseId
+                    ? "Modify Expense Entry"
+                    : "Log New Expense"}
+                </h2>
+                <button
+                  onClick={closeExpenseModal}
+                  className="p-2 hover:bg-slate-100 rounded-full transition"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Outflow Cash Field */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Amount (PHP)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={expenseForm.amount}
+                    onChange={(e) =>
+                      setExpenseForm({ ...expenseForm, amount: e.target.value })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-bold text-lg text-rose-600"
+                  />
+                </div>
+
+                {/* Relational Classification Type Selector */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Cost Type Category
+                  </label>
+                  <select
+                    value={expenseForm.category}
+                    onChange={(e) =>
+                      setExpenseForm({
+                        ...expenseForm,
+                        category: e.target.value as ExpenseCategory,
+                      })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 text-sm"
+                  >
+                    <option value="Utilities">
+                      Utilities (Power, Web, Water)
+                    </option>
+                    <option value="Supplier">
+                      Supplier (Restocking Inventory)
+                    </option>
+                    <option value="Rent">
+                      Rent (Shop / Real Estate Space)
+                    </option>
+                    <option value="Salaries">
+                      Salaries (Payroll Liabilities)
+                    </option>
+                    <option value="Marketing">
+                      Marketing (Promotional Ads)
+                    </option>
+                    <option value="Maintenance">
+                      Maintenance (Equipment Repairs)
+                    </option>
+                    <option value="Spoilage/Loss">
+                      Spoilage/Loss (Expired/Broken Stock)
+                    </option>
+                    <option value="Miscellaneous">
+                      Miscellaneous (Other Outflows)
+                    </option>
+                  </select>
+                </div>
+
+                {/* Occurrence Calendar Input */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Transaction Date
+                  </label>
+                  <input
+                    type="date"
+                    value={expenseForm.expenseDate}
+                    onChange={(e) =>
+                      setExpenseForm({
+                        ...expenseForm,
+                        expenseDate: e.target.value,
+                      })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 text-sm"
+                  />
+                </div>
+
+                {/* Ledger Outflow Medium Channel */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Payment Channel Method
+                  </label>
+                  <select
+                    value={expenseForm.paymentMethod}
+                    onChange={(e) =>
+                      setExpenseForm({
+                        ...expenseForm,
+                        paymentMethod: e.target.value,
+                      })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 text-sm"
+                  >
+                    <option value="Cash">Cash Drawer</option>
+                    <option value="GCash">GCash Transfer</option>
+                    <option value="Maya">Maya Account</option>
+                    <option value="Bank Transfer">Bank Transfer Wire</option>
+                    <option value="Credit Card">Business Credit Card</option>
+                  </select>
+                </div>
+
+                {/* Validation Audit Trail Reference Strings */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Receipt / Invoice reference (Optional)
+                  </label>
+                  <input
+                    placeholder="OR-XXXXX or Txn ID Reference"
+                    value={expenseForm.referenceNo}
+                    onChange={(e) =>
+                      setExpenseForm({
+                        ...expenseForm,
+                        referenceNo: e.target.value,
+                      })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 text-sm font-mono"
+                  />
+                </div>
+
+                {/* Descriptive Meta Content Narrative */}
+                <div>
+                  <label className="text-xs font-bold text-slate-500 block mb-1">
+                    Detailed Log Description
+                  </label>
+                  <textarea
+                    placeholder="Specify details (e.g., PLDT Fiber Bill for March, 2x mouse replacements for workstation)"
+                    value={expenseForm.description}
+                    onChange={(e) =>
+                      setExpenseForm({
+                        ...expenseForm,
+                        description: e.target.value,
+                      })
+                    }
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 text-sm min-h-[80px]"
+                  />
+                </div>
+
+                <button
+                  onClick={handleSaveExpense}
+                  className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold transition mt-2 shadow-sm"
+                >
+                  {editingExpenseId
+                    ? "Update Ledger Record"
+                    : "Save Expense Entry"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
-
-export default page;
