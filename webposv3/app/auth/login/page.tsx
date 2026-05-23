@@ -4,6 +4,7 @@ import { KeyboardEvent } from "react";
 import { useState, useEffect } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
 import { logUserActivity } from "@/lib/activityLogger";
+import { applyTheme, resolvePreferredTheme } from "@/lib/theme";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Moon, Sun, ShieldCheck, Loader2 } from "lucide-react";
@@ -17,30 +18,12 @@ export default function Login() {
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [approvalMessage, setApprovalMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    resolvePreferredTheme(),
+  );
 
   useEffect(() => {
-    const savedTheme =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("webpos-theme")
-        : null;
-    if (savedTheme === "light" || savedTheme === "dark") {
-      setTheme(savedTheme);
-      return;
-    }
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches
-    ) {
-      setTheme("dark");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("webpos-theme", theme);
-    }
+    applyTheme(theme);
   }, [theme]);
 
   //handle enter key press
