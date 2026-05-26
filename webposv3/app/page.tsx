@@ -126,7 +126,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-slate-100 py-10 text-center text-slate-400 text-xs md:text-sm">
-        <p>© 2024 POSPRO System. All rights reserved.</p>
+        <p>© 2024 FCODES COMPANY. All rights reserved.</p>
       </footer>
     </div>
   );

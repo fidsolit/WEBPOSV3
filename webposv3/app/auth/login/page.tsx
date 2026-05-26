@@ -155,23 +155,167 @@ export default function Login() {
         }`}
       >
         <div className="text-center mb-7">
-          <div
-            className={`h-12 w-12 mx-auto rounded-xl flex items-center justify-center mb-3 ${
-              theme === "dark"
-                ? "bg-blue-500/20 text-blue-300"
-                : "bg-blue-50 text-blue-600"
-            }`}
-          >
-            <ShieldCheck size={22} />
+          <div className="flex justify-center mb-4">
+            <svg
+              viewBox="0 0 540 150"
+              className={`h-16 w-auto ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient
+                  id="loginBlueGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="100%"
+                >
+                  <stop offset="0%" stopColor="#3b82f6" />
+                  <stop offset="100%" stopColor="#1d4ed8" />
+                </linearGradient>
+
+                <linearGradient
+                  id="loginGreenGrad"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="0%"
+                >
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#059669" />
+                </linearGradient>
+
+                <filter
+                  id="loginGlow"
+                  x="-20%"
+                  y="-20%"
+                  width="140%"
+                  height="140%"
+                >
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+
+              <g transform="translate(10, 5)">
+                <path
+                  d="M20 30 C20 15, 35 0, 50 0 L110 0 C125 0, 140 15, 140 30 L140 120 C140 130, 130 140, 120 140 L40 140 C25 140, 20 125, 20 110 Z"
+                  fill="url(#loginBlueGrad)"
+                />
+
+                <path d="M32 15 H128 V65 H32 Z" fill="#1e293b" opacity="0.9" />
+
+                <rect
+                  x="42"
+                  y="90"
+                  width="18"
+                  height="12"
+                  rx="3"
+                  fill="#ffffff"
+                  opacity="0.2"
+                />
+                <rect
+                  x="71"
+                  y="90"
+                  width="18"
+                  height="12"
+                  rx="3"
+                  fill="#ffffff"
+                  opacity="0.2"
+                />
+                <rect
+                  x="100"
+                  y="90"
+                  width="18"
+                  height="12"
+                  rx="3"
+                  fill="#ffffff"
+                  opacity="0.2"
+                />
+                <rect
+                  x="42"
+                  y="112"
+                  width="47"
+                  height="12"
+                  rx="3"
+                  fill="#ffffff"
+                  opacity="0.3"
+                />
+                <rect
+                  x="100"
+                  y="112"
+                  width="18"
+                  height="12"
+                  rx="3"
+                  fill="url(#loginGreenGrad)"
+                />
+
+                <path
+                  d="M10 95 L55 50 L90 75 L145 15"
+                  fill="none"
+                  stroke="url(#loginGreenGrad)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter="url(#loginGlow)"
+                />
+
+                <circle cx="55" cy="50" r="7" fill="#ffffff" />
+                <circle cx="90" cy="75" r="7" fill="#ffffff" />
+                <circle
+                  cx="145"
+                  cy="15"
+                  r="9"
+                  fill="#10b981"
+                  stroke="#ffffff"
+                  strokeWidth="4"
+                />
+              </g>
+
+              <text
+                x="185"
+                y="105"
+                fontFamily="system-ui, sans-serif"
+                fontWeight="800"
+                fontSize="100"
+                fill="currentColor"
+                letterSpacing="-3"
+              >
+                pos
+              </text>
+
+              <text
+                x="340"
+                y="105"
+                fontFamily="system-ui, sans-serif"
+                fontWeight="900"
+                fontSize="110"
+                fill="url(#loginGreenGrad)"
+                letterSpacing="-1"
+              >
+                v3
+              </text>
+
+              <line
+                x1="190"
+                y1="130"
+                x2="490"
+                y2="130"
+                stroke="currentColor"
+                opacity="0.22"
+                strokeWidth="3"
+              />
+            </svg>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">WebPOS V3</h1>
+
           <p
-            className={`text-sm mt-1 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}
+            className={`text-sm mt-1 ${
+              theme === "dark" ? "text-slate-400" : "text-slate-500"
+            }`}
           >
             Secure sign-in to your dashboard
           </p>
         </div>
-
         {errorMessage && (
           <div
             className={`mb-4 rounded-xl px-4 py-3 text-sm ${
