@@ -5,12 +5,13 @@ import { useState, useEffect } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
 import { logUserActivity } from "@/lib/activityLogger";
 import { applyTheme, resolvePreferredTheme } from "@/lib/theme";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Moon, Sun, ShieldCheck, Loader2 } from "lucide-react";
+import { Moon, Sun, Loader2 } from "lucide-react";
 
 export default function Login() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,10 @@ export default function Login() {
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     resolvePreferredTheme(),
   );
+  const expiredReasonMessage =
+    searchParams.get("reason") === "expired"
+      ? "Your session expired due to inactivity. Please sign in again."
+      : "";
 
   useEffect(() => {
     applyTheme(theme);
@@ -316,7 +321,7 @@ export default function Login() {
             Secure sign-in to your dashboard
           </p>
         </div>
-        {errorMessage && (
+        {(errorMessage || expiredReasonMessage) && (
           <div
             className={`mb-4 rounded-xl px-4 py-3 text-sm ${
               theme === "dark"
@@ -324,7 +329,7 @@ export default function Login() {
                 : "bg-rose-50 text-rose-700 border border-rose-100"
             }`}
           >
-            {errorMessage}
+            {errorMessage || expiredReasonMessage}
           </div>
         )}
 
