@@ -59,6 +59,7 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ExpenseRow[]>([]);
+  const [totalExpenseCount, setTotalExpenseCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userNamesById, setUserNamesById] = useState<Record<string, string>>({});
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -70,15 +71,28 @@ export default function ExpensesPage() {
   const pageSize = 10;
 
   // 2. Fetch and Sync Handlers
-  const loadExpenses = useCallback(async () => {
+  const loadExpenses = useCallback(async (page = 1, searchTerm = "") => {
     setLoading(true);
-    const { data, error } = await supabase
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase
       .from("expenses")
       .select(
         "id, amount, category, description, expense_date, payment_method, reference_no, created_by, created_at",
+        { count: "exact" },
       )
       .order("expense_date", { ascending: false })
       .order("created_at", { ascending: false });
+
+    const trimmedSearch = searchTerm.trim();
+    if (trimmedSearch) {
+      query = query.or(
+        `description.ilike.%${trimmedSearch}%,category.ilike.%${trimmedSearch}%,payment_method.ilike.%${trimmedSearch}%,reference_no.ilike.%${trimmedSearch}%`,
+      );
+    }
+
+    const { data, error, count } = await query.range(from, to);
 
     if (error) {
       if (error.code === "42P01") {
@@ -90,6 +104,14 @@ export default function ExpensesPage() {
       setExpenseFeatureReady(true);
       const expenseRows = (data as ExpenseRow[]) ?? [];
       setRows(expenseRows);
+      setTotalExpenseCount(count ?? 0);
+
+      const maxPage = Math.max(1, Math.ceil((count ?? 0) / pageSize));
+      if (page > maxPage) {
+        setCurrentPage(maxPage);
+        setLoading(false);
+        return;
+      }
 
       const uniqueUserIds = Array.from(
         new Set(
@@ -122,7 +144,7 @@ export default function ExpensesPage() {
       }
     }
     setLoading(false);
-  }, []);
+  }, [pageSize]);
 
   useEffect(() => {
     const init = async () => {
@@ -136,42 +158,31 @@ export default function ExpensesPage() {
       setCurrentUserId(user.id);
 
       setCheckingAuth(false);
-      await loadExpenses();
+      await loadExpenses(1, "");
     };
     init();
   }, [loadExpenses, router]);
+
+  useEffect(() => {
+    if (checkingAuth) return;
+    const timeoutId = window.setTimeout(() => {
+      void loadExpenses(currentPage, search);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [checkingAuth, currentPage, loadExpenses, search]);
 
   // Form State Handler
   const [expenseForm, setExpenseForm] =
     useState<ExpenseFormState>(EMPTY_EXPENSE_FORM);
 
   // 3. Computed Metrics: Filtering, Aggregations, and Searching
-  const filteredExpenses = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return rows.filter((exp) => {
-      if (!query) return true;
-      return (
-        exp.description.toLowerCase().includes(query) ||
-        exp.category.toLowerCase().includes(query) ||
-        exp.payment_method.toLowerCase().includes(query) ||
-        exp.reference_no?.toLowerCase().includes(query) ||
-        userNamesById[exp.created_by ?? ""]?.toLowerCase().includes(query)
-      );
-    });
-  }, [rows, search, userNamesById]);
-
   const totalExpenseAmount = useMemo(() => {
-    return filteredExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-  }, [filteredExpenses]);
+    return rows.reduce((sum, exp) => sum + Number(exp.amount), 0);
+  }, [rows]);
 
-  // Pagination bounds checking
-  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalExpenseCount / pageSize));
   const effectivePage = Math.min(currentPage, totalPages);
-
-  const paginatedExpenses = useMemo(() => {
-    const start = (effectivePage - 1) * pageSize;
-    return filteredExpenses.slice(start, start + pageSize);
-  }, [filteredExpenses, effectivePage, pageSize]);
 
   // 4. Mutation Handlers: Create, Update, Delete
   const handleSaveExpense = async () => {
@@ -222,7 +233,7 @@ export default function ExpensesPage() {
     }
 
     closeExpenseModal();
-    await loadExpenses();
+    await loadExpenses(currentPage, search);
   };
 
   const openEditExpense = (expense: ExpenseRow) => {
@@ -248,7 +259,7 @@ export default function ExpensesPage() {
     if (error) {
       alert(error.message);
     } else {
-      await loadExpenses();
+      await loadExpenses(currentPage, search);
     }
   };
 
@@ -315,7 +326,7 @@ export default function ExpensesPage() {
                 })}
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Summing {filteredExpenses.length} entries
+                Summing {rows.length} entries on this page
               </p>
             </div>
           </div>
@@ -366,7 +377,7 @@ export default function ExpensesPage() {
                         <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
                       </td>
                     </tr>
-                  ) : paginatedExpenses.length === 0 ? (
+                  ) : rows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={8}
@@ -376,7 +387,7 @@ export default function ExpensesPage() {
                       </td>
                     </tr>
                   ) : (
-                    paginatedExpenses.map((expense) => (
+                    rows.map((expense) => (
                       <tr
                         key={expense.id}
                         className="hover:bg-slate-50/60 transition-colors"
@@ -437,7 +448,7 @@ export default function ExpensesPage() {
               currentPage={effectivePage}
               totalPages={totalPages}
               pageSize={pageSize}
-              totalItems={filteredExpenses.length}
+              totalItems={totalExpenseCount}
               itemLabel="expenses"
               onPageChange={(page) => setCurrentPage(page)}
             />

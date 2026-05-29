@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 interface CustomerCreditRow {
   id: string;
+  branch_id: string | null;
   customer_name: string;
   contact_number: string | null;
   amount: number;
@@ -110,24 +111,35 @@ export default function CustomersPage() {
     [],
   );
 
-  const syncOverdueStatuses = useCallback(async () => {
+  const syncOverdueStatuses = useCallback(async (branchId: string | null) => {
+    if (!branchId) return;
     const today = new Date().toISOString().slice(0, 10);
     await supabase
       .from("customer_credits")
       .update({ payment_status: "overdue" })
+      .eq("branch_id", branchId)
       .eq("is_paid", false)
       .lt("promise_to_pay_date", today)
       .neq("payment_status", "overdue");
   }, []);
 
-  const loadCustomerCredits = useCallback(async () => {
+  const loadCustomerCredits = useCallback(async (branchId: string | null) => {
     setLoading(true);
-    await syncOverdueStatuses();
+    if (!branchId) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    await syncOverdueStatuses(branchId);
     const { data, error } = await supabase
       .from("customer_credits")
       .select(
-        "id, customer_name, contact_number, amount, promise_to_pay_date, is_paid, payment_status",
+        "id, branch_id, customer_name, contact_number, amount, promise_to_pay_date, is_paid, payment_status",
       )
+      .eq("branch_id", branchId)
+      .eq("is_paid", false)
+      .neq("payment_status", "paid")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -167,7 +179,7 @@ export default function CustomersPage() {
 
       setActiveBranchId(resolvedBranchId);
       setCheckingAuth(false);
-      await loadCustomerCredits();
+      await loadCustomerCredits(resolvedBranchId);
       await loadRegisteredCustomers(resolvedBranchId, 1);
     };
     init();
@@ -265,8 +277,10 @@ export default function CustomersPage() {
     let query = supabase
       .from("customer_credits")
       .update({ is_paid: true, payment_status: "paid" })
+      .eq("branch_id", activeBranchId)
       .eq("customer_name", customer.customer_name)
-      .eq("is_paid", false);
+      .eq("is_paid", false)
+      .neq("payment_status", "paid");
 
     query =
       customer.contact_number === null
@@ -277,7 +291,7 @@ export default function CustomersPage() {
     if (error) {
       alert(error.message);
     } else {
-      await loadCustomerCredits();
+      await loadCustomerCredits(activeBranchId);
     }
     setPaidLoadingKey(null);
   };

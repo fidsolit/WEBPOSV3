@@ -31,6 +31,14 @@ interface UserActivityLog {
   created_at: string;
 }
 
+interface CashierStats {
+  totalStaff: number;
+  admins: number;
+  cashiers: number;
+  approvedCashiers: number;
+  pendingApproval: number;
+}
+
 export default function CashiersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -39,32 +47,89 @@ export default function CashiersPage() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | Role>("all");
   const [page, setPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
 
   const [profiles, setProfiles] = useState<CashierProfile[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [recentActivities, setRecentActivities] = useState<UserActivityLog[]>([]);
+  const [totalProfiles, setTotalProfiles] = useState(0);
+  const [totalActivities, setTotalActivities] = useState(0);
+  const [stats, setStats] = useState<CashierStats>({
+    totalStaff: 0,
+    admins: 0,
+    cashiers: 0,
+    approvedCashiers: 0,
+    pendingApproval: 0,
+  });
   const pageSize = 10;
+  const activityPageSize = 10;
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const activityFrom = (activityPage - 1) * activityPageSize;
+    const activityTo = activityFrom + activityPageSize - 1;
+    const trimmedQuery = query.trim();
+
+    let profilesQuery = supabase
+      .from("profiles")
+      .select("id, full_name, role, is_approved, branch_id, created_at", {
+        count: "exact",
+      })
+      .order("created_at", { ascending: false });
+
+    if (roleFilter !== "all") {
+      profilesQuery = profilesQuery.eq("role", roleFilter);
+    }
+
+    if (trimmedQuery) {
+      profilesQuery = profilesQuery.or(
+        `full_name.ilike.%${trimmedQuery}%,id.ilike.%${trimmedQuery}%`,
+      );
+    }
+
     const [
       { data: branchData, error: branchError },
-      { data: profileData, error: profileError },
-      { data: activityData, error: activityError },
+      { data: profileData, error: profileError, count: profileCount },
+      { data: activityData, error: activityError, count: activityCount },
+      { count: totalStaffCount, error: totalStaffError },
+      { count: adminCount, error: adminCountError },
+      { count: cashierCount, error: cashierCountError },
+      { count: approvedCashierCount, error: approvedCashierCountError },
+      { count: pendingCashierCount, error: pendingCashierCountError },
     ] = await Promise.all([
       supabase
         .from("branches")
         .select("id, name")
         .order("name", { ascending: true }),
-      supabase
-        .from("profiles")
-        .select("id, full_name, role, is_approved, branch_id, created_at")
-        .order("created_at", { ascending: false }),
+      profilesQuery.range(from, to),
       supabase
         .from("user_activity_logs")
-        .select("id, user_id, branch_id, activity_type, created_at")
+        .select("id, user_id, branch_id, activity_type, created_at", {
+          count: "exact",
+        })
         .order("created_at", { ascending: false })
-        .limit(20),
+        .range(activityFrom, activityTo),
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin"),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "cashier"),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "cashier")
+        .eq("is_approved", true),
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "cashier")
+        .eq("is_approved", false),
     ]);
 
     if (branchError)
@@ -73,12 +138,68 @@ export default function CashiersPage() {
       console.error("Failed to fetch profiles:", profileError.message);
     if (activityError)
       console.error("Failed to fetch recent activities:", activityError.message);
+    if (totalStaffError)
+      console.error("Failed to fetch total staff count:", totalStaffError.message);
+    if (adminCountError)
+      console.error("Failed to fetch admin count:", adminCountError.message);
+    if (cashierCountError)
+      console.error("Failed to fetch cashier count:", cashierCountError.message);
+    if (approvedCashierCountError)
+      console.error(
+        "Failed to fetch approved cashier count:",
+        approvedCashierCountError.message,
+      );
+    if (pendingCashierCountError)
+      console.error(
+        "Failed to fetch pending cashier count:",
+        pendingCashierCountError.message,
+      );
+
+    const currentProfiles = (profileData as CashierProfile[]) ?? [];
+    const activityRows = (activityData as UserActivityLog[]) ?? [];
+    const activityUserIds = Array.from(
+      new Set(
+        activityRows
+          .map((activity) => activity.user_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    const missingActivityUserIds = activityUserIds.filter(
+      (id) => !currentProfiles.some((profile) => profile.id === id),
+    );
+
+    let supplementalProfiles: CashierProfile[] = [];
+    if (missingActivityUserIds.length > 0) {
+      const { data: supplementalProfileData, error: supplementalProfileError } =
+        await supabase
+          .from("profiles")
+          .select("id, full_name, role, is_approved, branch_id, created_at")
+          .in("id", missingActivityUserIds);
+
+      if (supplementalProfileError) {
+        console.error(
+          "Failed to fetch activity user names:",
+          supplementalProfileError.message,
+        );
+      } else {
+        supplementalProfiles = (supplementalProfileData as CashierProfile[]) ?? [];
+      }
+    }
 
     setBranches((branchData as Branch[]) ?? []);
-    setProfiles((profileData as CashierProfile[]) ?? []);
-    setRecentActivities((activityData as UserActivityLog[]) ?? []);
+    setProfiles([...currentProfiles, ...supplementalProfiles]);
+    setTotalProfiles(profileCount ?? 0);
+    setRecentActivities(activityRows);
+    setTotalActivities(activityCount ?? 0);
+    setStats({
+      totalStaff: totalStaffCount ?? 0,
+      admins: adminCount ?? 0,
+      cashiers: cashierCount ?? 0,
+      approvedCashiers: approvedCashierCount ?? 0,
+      pendingApproval: pendingCashierCount ?? 0,
+    });
     setLoading(false);
-  }, []);
+  }, [activityPage, activityPageSize, page, pageSize, query, roleFilter]);
 
   useEffect(() => {
     const init = async () => {
@@ -111,26 +232,16 @@ export default function CashiersPage() {
     [branches],
   );
 
-  const rows = useMemo(() => {
-    return profiles
-      .map((profile) => ({
+  const rows = useMemo(
+    () =>
+      profiles.slice(0, pageSize).map((profile) => ({
         ...profile,
         branchName: profile.branch_id
           ? branchMap.get(profile.branch_id) || "Unknown branch"
           : "Unassigned",
-      }))
-      .filter((profile) => {
-        const matchesRole = roleFilter === "all" || profile.role === roleFilter;
-        const q = query.trim().toLowerCase();
-        if (!q) return matchesRole;
-        return (
-          matchesRole &&
-          (profile.full_name?.toLowerCase().includes(q) ||
-            profile.id.toLowerCase().includes(q) ||
-            profile.branchName.toLowerCase().includes(q))
-        );
-      });
-  }, [profiles, branchMap, query, roleFilter]);
+      })),
+    [branchMap, pageSize, profiles],
+  );
 
   const activityRows = useMemo(() => {
     const profileMap = new Map(
@@ -146,12 +257,13 @@ export default function CashiersPage() {
     }));
   }, [branchMap, profiles, recentActivities]);
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalProfiles / pageSize));
   const effectivePage = Math.min(page, totalPages);
-  const paginatedRows = useMemo(() => {
-    const start = (effectivePage - 1) * pageSize;
-    return rows.slice(start, start + pageSize);
-  }, [effectivePage, pageSize, rows]);
+  const totalActivityPages = Math.max(
+    1,
+    Math.ceil(totalActivities / activityPageSize),
+  );
+  const effectiveActivityPage = Math.min(activityPage, totalActivityPages);
 
   const updateProfile = async (id: string, patch: Partial<CashierProfile>) => {
     setSaving(id);
@@ -165,11 +277,7 @@ export default function CashiersPage() {
       return;
     }
 
-    setProfiles((current) =>
-      current.map((profile) =>
-        profile.id === id ? { ...profile, ...patch } : profile,
-      ),
-    );
+    await loadData();
     setSaving(null);
   };
 
@@ -209,35 +317,29 @@ export default function CashiersPage() {
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <StatTile
             label="Total Staff"
-            value={profiles.length.toString()}
+            value={stats.totalStaff.toString()}
             icon={<UserCircle2 size={18} />}
           />
           <StatTile
             label="Admins"
-            value={profiles.filter((p) => p.role === "admin").length.toString()}
+            value={stats.admins.toString()}
             icon={<Shield size={18} />}
           />
           <StatTile
             label="Cashiers"
-            value={profiles
-              .filter((p) => p.role === "cashier")
-              .length.toString()}
+            value={stats.cashiers.toString()}
             icon={<UserCircle2 size={18} />}
           />
         </section>
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <StatTile
             label="Approved Cashiers"
-            value={profiles
-              .filter((p) => p.role === "cashier" && p.is_approved)
-              .length.toString()}
+            value={stats.approvedCashiers.toString()}
             icon={<Shield size={18} />}
           />
           <StatTile
             label="Pending Approval"
-            value={profiles
-              .filter((p) => p.role === "cashier" && !p.is_approved)
-              .length.toString()}
+            value={stats.pendingApproval.toString()}
             icon={<UserCircle2 size={18} />}
           />
         </section>
@@ -296,7 +398,7 @@ export default function CashiersPage() {
                     </td>
                   </tr>
                 )}
-                {paginatedRows.map((profile) => (
+                {rows.map((profile) => (
                   <tr
                     key={profile.id}
                     className="hover:bg-slate-50/60 transition-colors"
@@ -376,7 +478,7 @@ export default function CashiersPage() {
             currentPage={effectivePage}
             totalPages={totalPages}
             pageSize={pageSize}
-            totalItems={rows.length}
+            totalItems={totalProfiles}
             itemLabel="staff members"
             onPageChange={(nextPage) => {
               setPage(nextPage);
@@ -435,6 +537,16 @@ export default function CashiersPage() {
               </tbody>
             </table>
           </div>
+          <PaginationControls
+            currentPage={effectiveActivityPage}
+            totalPages={totalActivityPages}
+            pageSize={activityPageSize}
+            totalItems={totalActivities}
+            itemLabel="activity logs"
+            onPageChange={(nextPage) => {
+              setActivityPage(nextPage);
+            }}
+          />
         </section>
       </main>
     </div>
