@@ -9,17 +9,10 @@ This document consolidates the database schema currently visible in the reposito
 
 ## Source Files
 
-- [phase1_schema_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_schema_upgrade.sql)
-- [phase1_role_credit_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_role_credit_upgrade.sql)
-- [phase1_customer_registry_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_customer_registry_upgrade.sql)
-- [phase1_customer_contact_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_customer_contact_upgrade.sql)
-- [phase1_inventory_variant_loss_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_inventory_variant_loss_upgrade.sql)
-- [phase1_stock_movements_policy_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_stock_movements_policy_upgrade.sql)
-- [phase1_user_activity_logs_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_user_activity_logs_upgrade.sql)
-- [phase1_cashier_approval_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_cashier_approval_upgrade.sql)
-- [supabase_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/supabase_setup.sql)
-- [expenses52326.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/expenses52326.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 - [POSV3_BACKEND_DOCUMENTATION.md](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/POSV3_BACKEND_DOCUMENTATION.md)
+
+Legacy SQL migrations were consolidated into database_setup.sql.
 
 ## Schema Summary
 
@@ -89,7 +82,7 @@ Columns:
 - `full_name text` inferred from trigger insert
 - `role text` inferred from trigger insert, used as `admin | cashier`
 - `branch_id uuid nullable` inferred from app usage and policies, references `public.branches(id)`
-- `is_approved boolean not null default true` defined in [phase1_cashier_approval_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_cashier_approval_upgrade.sql)
+- `is_approved boolean not null default true` defined in [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 - `created_at timestamp` inferred from app usage
 
 Indexes:
@@ -206,7 +199,7 @@ Indexes:
 - `sales_local_ref_idx (local_ref) WHERE local_ref IS NOT NULL`
 
 RLS:
-- enabled in [phase1_role_credit_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_role_credit_upgrade.sql)
+- enabled in [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 - select/insert/update policies scoped to admin or same branch
 
 ### `public.sale_items`
@@ -534,18 +527,18 @@ Trigger logic:
 ### `public.on_auth_user_created()`
 
 Defined in:
-- [supabase_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/supabase_setup.sql)
-- replaced in [phase1_cashier_approval_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_cashier_approval_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
+- replaced in [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 Behavior:
 - inserts a `profiles` row after user creation in `auth.users`
 - defaults role to `cashier`
-- newer version defaults cashier approval to `false` and admin approval to `true`
+- defaults new signups to unapproved `cashier`
 
 ### `public.set_customer_credit_status()`
 
 Defined in:
-- [phase1_role_credit_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_role_credit_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 Behavior:
 - sets `payment_status` to:
@@ -556,7 +549,7 @@ Behavior:
 ### `update_modified_column()`
 
 Defined in:
-- [expenses52326.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/expenses52326.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 Behavior:
 - updates `expenses.updated_at` automatically before update
@@ -574,7 +567,7 @@ Tables with RLS enabled in repo SQL:
 - `public.expenses`
 
 Special note:
-- [supabase_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/supabase_setup.sql) explicitly disables RLS on `public.profiles` during setup/debug flow
+- `public.profiles` is protected by RLS in [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ## Missing Base DDL
 
@@ -589,3 +582,5 @@ The following tables are clearly part of the live schema, but their original `CR
 - `public.payments`
 
 For those tables, this reference documents only the fields that are directly visible from migrations, application code, and backend documentation.
+
+

@@ -331,7 +331,7 @@ export default function CustomersPage() {
       if (error.code === "42P01") {
         setCustomerFeatureReady(false);
         return alert(
-          "Customers table missing. Run phase1_customer_registry_upgrade.sql.",
+          "Customers table missing. Run database_setup.sql.",
         );
       }
       alert(error.message);

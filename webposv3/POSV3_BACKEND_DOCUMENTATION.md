@@ -83,7 +83,7 @@ Authentication is managed by Supabase Auth.
 
 - [page.tsx](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/app/auth/login/page.tsx)
 - [sidebar.tsx](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/app/components/sidebar.tsx)
-- [supabase_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/supabase_setup.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### Trigger-Based Profile Creation
 
@@ -163,7 +163,7 @@ Important fields:
 
 Indexes and hardening are defined in:
 
-- [phase1_schema_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_schema_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### 6.4 Inventory
 
@@ -201,7 +201,7 @@ Important fields:
 
 Defined in:
 
-- [phase1_inventory_variant_loss_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_inventory_variant_loss_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### 6.6 Inventory Variant Stock
 
@@ -311,7 +311,7 @@ This auto-updates status to:
 
 Defined in:
 
-- [phase1_role_credit_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_role_credit_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### 6.11 Customers
 
@@ -333,7 +333,7 @@ Important fields:
 
 Defined in:
 
-- [phase1_customer_registry_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_customer_registry_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### 6.12 Inventory Losses
 
@@ -389,11 +389,11 @@ Current application usage:
 
 Defined in:
 
-- [phase1_schema_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_schema_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 Policies added in:
 
-- [phase1_stock_movements_policy_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_stock_movements_policy_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ### 6.14 User Activity Logs
 
@@ -415,74 +415,22 @@ Allowed activity types:
 
 Defined in:
 
-- [phase1_user_activity_logs_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_user_activity_logs_upgrade.sql)
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
 ## 7. SQL Migration Files
 
-The project uses SQL upgrade files to evolve schema and policies.
+The project now uses one consolidated SQL setup file:
 
-### Main Schema Upgrade
+- [database_setup.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/database_setup.sql)
 
-- [phase1_schema_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_schema_upgrade.sql)
+It covers:
 
-Covers:
-
-- product hardening
-- inventory hardening
-- stock movements
-- sales structure updates
-- sale item updates
-- payments updates
-- saved carts
-
-### Role + Credit Upgrade
-
-- [phase1_role_credit_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_role_credit_upgrade.sql)
-
-Covers:
-
-- customer credits
-- credit status trigger
-- sales, sale_items, payments RLS
-
-### Customer Registry Upgrade
-
-- [phase1_customer_registry_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_customer_registry_upgrade.sql)
-
-Covers:
-
-- customer registry table
-- customer RLS policies
-
-### Inventory Variant + Loss Upgrade
-
-- [phase1_inventory_variant_loss_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_inventory_variant_loss_upgrade.sql)
-
-Covers:
-
-- product variants
-- inventory variant stock
-- inventory losses
-
-### Stock Movement Policy Upgrade
-
-- [phase1_stock_movements_policy_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_stock_movements_policy_upgrade.sql)
-
-Covers:
-
-- enabling RLS for `stock_movements`
-- select policy
-- insert policy
-
-### User Activity Logs Upgrade
-
-- [phase1_user_activity_logs_upgrade.sql](/C:/Users/FCODES/Desktop/PROJECTS/webposv3/webposv3/phase1_user_activity_logs_upgrade.sql)
-
-Covers:
-
-- `user_activity_logs` table
-- indexes
-- RLS policies for select and insert
+- auth profile trigger and approval setup
+- products, inventory, sales, sale items, payments, and saved carts
+- product variants, inventory variant stock, and inventory losses
+- customer registry, contact fields, and customer credits
+- expenses table, indexes, and timestamp trigger
+- RLS for profiles, customers, credits, sales, payments, stock movements, and user activity logs
 
 ## 8. Row-Level Security Model
 
@@ -675,3 +623,5 @@ Its strongest backend characteristics are:
 - stock movement auditability
 - user activity tracking
 - branch-based operational scoping
+
+

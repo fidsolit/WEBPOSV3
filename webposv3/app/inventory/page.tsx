@@ -710,7 +710,7 @@ export default function Inventory() {
         movementError.message.includes("violates row-level security policy")
       ) {
         alert(
-          "Delivery was blocked by Supabase RLS for stock_movements. Run phase1_stock_movements_policy_upgrade.sql in Supabase SQL Editor, then try again.",
+          "Delivery was blocked by Supabase RLS for stock_movements. Run database_setup.sql in Supabase SQL Editor, then try again.",
         );
         setLoading(false);
         return;
