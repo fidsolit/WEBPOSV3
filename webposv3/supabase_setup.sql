@@ -10,11 +10,12 @@ DROP FUNCTION IF EXISTS public.on_auth_user_created();
 CREATE OR REPLACE FUNCTION public.on_auth_user_created()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, full_name, role)
+  INSERT INTO public.profiles (id, full_name, role, is_approved)
   VALUES (
     new.id,
     COALESCE(new.raw_user_meta_data->>'full_name', new.email),
-    COALESCE(new.raw_user_meta_data->>'role', 'cashier')
+    'cashier',
+    false
   )
   ON CONFLICT (id) DO NOTHING;
   
@@ -31,6 +32,3 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE FUNCTION public.on_auth_user_created();
-
--- Disable RLS temporarily to debug
-ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;

@@ -2,11 +2,21 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const adminOnlyPrefixes = ["/inventory", "/cashiers", "/settings", "/reports"];
+  const isProtectedRoute =
+    pathname.startsWith("/pos") ||
+    adminOnlyPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isAuthRoute = pathname.startsWith("/auth");
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Fail open in middleware if env is missing to avoid redirect loops in production misconfigurations.
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (isProtectedRoute || isAuthRoute) {
+      return new NextResponse("Authentication is not configured.", {
+        status: 503,
+      });
+    }
     return NextResponse.next();
   }
 
@@ -49,14 +59,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-
-  const adminOnlyPrefixes = ["/inventory", "/cashiers", "/settings", "/reports"];
-  const isProtectedRoute =
-    pathname.startsWith("/pos") ||
-    adminOnlyPrefixes.some((prefix) => pathname.startsWith(prefix));
-  const isAuthRoute = pathname.startsWith("/auth");
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone();

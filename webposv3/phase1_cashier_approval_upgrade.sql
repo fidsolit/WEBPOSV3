@@ -22,17 +22,15 @@ CREATE OR REPLACE FUNCTION public.on_auth_user_created()
 RETURNS TRIGGER AS $$
 DECLARE
   resolved_name text;
-  resolved_role text;
 BEGIN
   resolved_name := COALESCE(new.raw_user_meta_data->>'full_name', new.email);
-  resolved_role := COALESCE(new.raw_user_meta_data->>'role', 'cashier');
 
   INSERT INTO public.profiles (id, full_name, role, is_approved)
   VALUES (
     new.id,
     resolved_name,
-    resolved_role,
-    CASE WHEN resolved_role = 'admin' THEN true ELSE false END
+    'cashier',
+    false
   )
   ON CONFLICT (id) DO NOTHING;
 

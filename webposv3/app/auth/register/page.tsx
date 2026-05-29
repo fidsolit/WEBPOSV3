@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
 import {
   Mail,
   Lock,
@@ -13,8 +12,6 @@ import {
 } from "lucide-react";
 
 export default function RegisterPage() {
-  const router = useRouter();
-
   // Form State
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -23,14 +20,9 @@ export default function RegisterPage() {
   // UI State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [emailValid, setEmailValid] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
 
-  // Real-time Email Validation
-  useEffect(() => {
-    const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    setEmailValid(pattern.test(email));
-  }, [email]);
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +30,11 @@ export default function RegisterPage() {
 
     if (!emailValid) {
       setError("Please enter a valid email address");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
       return;
     }
 
@@ -50,7 +47,6 @@ export default function RegisterPage() {
         options: {
           data: {
             full_name: fullName || email.split("@")[0],
-            role: "user",
           },
         },
       });
@@ -72,28 +68,16 @@ export default function RegisterPage() {
       }
 
       if (data?.session) {
-        await supabase
-          .from("profiles")
-          .update({ is_approved: false })
-          .eq("id", data.session.user.id)
-          .eq("role", "user");
         await supabase.auth.signOut();
         setError(
           "Signup successful. Please wait for admin approval before logging in.",
         );
       } else {
-        if (data?.user?.id) {
-          await supabase
-            .from("profiles")
-            .update({ is_approved: false })
-            .eq("id", data.user.id)
-            .eq("role", "cashier");
-        }
         setError(
           "Success! Please check your email for confirmation, then wait for admin approval.",
         );
       }
-    } catch (err) {
+    } catch {
       setError("An unexpected connection error occurred.");
     } finally {
       setLoading(false);
