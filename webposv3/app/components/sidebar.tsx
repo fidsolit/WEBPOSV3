@@ -241,6 +241,12 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
         {role === "admin" && (
           <>
             <SidebarItem
+              href="/products"
+              icon={<Package size={20} />}
+              label="Products"
+              active={pathname === "/products"}
+            />
+            <SidebarItem
               href="/inventory"
               icon={<Package size={20} />}
               label="Inventory"
