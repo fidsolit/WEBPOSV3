@@ -5,6 +5,87 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- -----------------------------
+-- 0) Base tables required for fresh installs
+-- -----------------------------
+CREATE TABLE IF NOT EXISTS public.branches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name text,
+  role text NOT NULL DEFAULT 'cashier'
+    CHECK (role IN ('admin', 'cashier', 'user')),
+  branch_id uuid REFERENCES public.branches(id) ON DELETE SET NULL,
+  is_approved boolean NOT NULL DEFAULT true,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.products (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  barcode text,
+  price numeric(12,2) NOT NULL DEFAULT 0,
+  cost numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamp without time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.inventory (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL REFERENCES public.branches(id) ON DELETE CASCADE,
+  product_id uuid NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  stock integer NOT NULL DEFAULT 0,
+  min_stock integer NOT NULL DEFAULT 0,
+  updated_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.sales (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  branch_id uuid NOT NULL REFERENCES public.branches(id) ON DELETE RESTRICT,
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  total numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.sale_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id uuid NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
+  product_id uuid REFERENCES public.products(id) ON DELETE SET NULL,
+  quantity integer NOT NULL DEFAULT 1,
+  price numeric(12,2) NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS public.payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id uuid NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
+  method text,
+  amount numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION public.is_admin(check_user_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = check_user_id
+      AND role = 'admin'
+  );
+END;
+$$;
 
 -- -----------------------------
 -- 1) Profiles + auth trigger
@@ -64,12 +145,7 @@ FOR SELECT
 TO authenticated
 USING (
   id = auth.uid()
-  OR EXISTS (
-    SELECT 1
-    FROM public.profiles admin_profile
-    WHERE admin_profile.id = auth.uid()
-      AND admin_profile.role = 'admin'
-  )
+  OR public.is_admin(auth.uid())
 );
 
 DROP POLICY IF EXISTS profiles_update_policy ON public.profiles;
@@ -78,20 +154,10 @@ ON public.profiles
 FOR UPDATE
 TO authenticated
 USING (
-  EXISTS (
-    SELECT 1
-    FROM public.profiles admin_profile
-    WHERE admin_profile.id = auth.uid()
-      AND admin_profile.role = 'admin'
-  )
+  public.is_admin(auth.uid())
 )
 WITH CHECK (
-  EXISTS (
-    SELECT 1
-    FROM public.profiles admin_profile
-    WHERE admin_profile.id = auth.uid()
-      AND admin_profile.role = 'admin'
-  )
+  public.is_admin(auth.uid())
 );
 
 -- -----------------------------

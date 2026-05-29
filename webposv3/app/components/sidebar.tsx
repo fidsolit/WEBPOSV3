@@ -29,6 +29,14 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<"admin" | "cashier" | "user" | null>(null);
+  const isAdminRoute =
+    pathname === "/admin" ||
+    pathname.startsWith("/products") ||
+    pathname.startsWith("/inventory") ||
+    pathname.startsWith("/cashiers") ||
+    pathname.startsWith("/reports") ||
+    pathname.startsWith("/settings");
+  const effectiveRole = role ?? (isAdminRoute ? "admin" : null);
 
   useEffect(() => {
     const loadRole = async () => {
@@ -57,6 +65,15 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
     await supabase.auth.signOut();
     router.refresh();
     router.push("/auth/login");
+  };
+
+  const handleNewSaleClick = () => {
+    if (onNewSaleClick) {
+      onNewSaleClick();
+      return;
+    }
+
+    router.push("/pos");
   };
 
   return (
@@ -213,13 +230,13 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
       {/* Main Nav */}
       <nav className="space-y-1 flex-1">
         <SidebarItem
-          href="/pos"
+          href={effectiveRole === "admin" ? "/admin" : "/pos"}
           icon={<LayoutDashboard size={20} />}
           label="Dashboard"
-          active={pathname === "/pos"}
+          active={pathname === "/pos" || pathname === "/admin"}
         />
         <button
-          onClick={onNewSaleClick}
+          onClick={handleNewSaleClick}
           className="flex items-center gap-3 p-3 w-full rounded-xl text-slate-600 hover:bg-slate-50 transition-all font-medium"
         >
           <ShoppingCart size={20} />
@@ -238,7 +255,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           active={pathname === "/expenses"}
         />
 
-        {role === "admin" && (
+        {effectiveRole === "admin" && (
           <>
             <SidebarItem
               href="/products"
@@ -271,7 +288,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
       {/* Bottom Nav */}
       <div className="pt-6 border-t border-slate-100 space-y-2">
         <ThemeToggle />
-        {role === "admin" && (
+        {effectiveRole === "admin" && (
           <SidebarItem
             href="/settings"
             icon={<Settings size={20} />}

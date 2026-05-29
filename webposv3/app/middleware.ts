@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const adminOnlyPrefixes = ["/products", "/inventory", "/cashiers", "/settings", "/reports"];
+  const adminOnlyPrefixes = ["/admin", "/products", "/inventory", "/cashiers", "/settings", "/reports"];
   const isProtectedRoute =
     pathname.startsWith("/pos") ||
     adminOnlyPrefixes.some((prefix) => pathname.startsWith(prefix));
@@ -67,8 +67,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && isAuthRoute) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
     const url = request.nextUrl.clone();
-    url.pathname = "/pos";
+    url.pathname = profile?.role === "admin" ? "/admin" : "/pos";
     return NextResponse.redirect(url);
   }
 

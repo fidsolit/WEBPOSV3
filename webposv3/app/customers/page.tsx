@@ -79,6 +79,55 @@ export default function CustomersPage() {
   const registeredCustomersPageSize = 5;
   const customerSummaryPageSize = 10;
 
+  const ensureActiveBranch = useCallback(
+    async (userId: string, role: string | null | undefined, branchId: string | null) => {
+      if (branchId) return branchId;
+
+      const { data: branch } = await supabase
+        .from("branches")
+        .select("id")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .single();
+
+      let resolvedBranchId = branch?.id ?? null;
+
+      if (!resolvedBranchId && role === "admin") {
+        const { data: createdBranch, error: createBranchError } = await supabase
+          .from("branches")
+          .insert([
+            {
+              name: "Main Branch",
+            },
+          ])
+          .select("id")
+          .single();
+
+        if (createBranchError) {
+          throw createBranchError;
+        }
+
+        resolvedBranchId = createdBranch?.id ?? null;
+      }
+
+      if (resolvedBranchId) {
+        const { error: profileUpdateError } = await supabase
+          .from("profiles")
+          .update({
+            branch_id: resolvedBranchId,
+          })
+          .eq("id", userId);
+
+        if (profileUpdateError && profileUpdateError.code !== "42703") {
+          throw profileUpdateError;
+        }
+      }
+
+      return resolvedBranchId;
+    },
+    [],
+  );
+
   const loadRegisteredCustomers = useCallback(
     async (branchId: string | null, page = 1) => {
       if (!branchId) return;
@@ -152,38 +201,42 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const init = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/auth/login");
-        return;
-      }
-      setCurrentUserId(user.id);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, branch_id")
-        .eq("id", user.id)
-        .single();
-
-      let resolvedBranchId = profile?.branch_id ?? null;
-      if (!resolvedBranchId) {
-        const { data: branch } = await supabase
-          .from("branches")
-          .select("id")
-          .order("created_at", { ascending: true })
-          .limit(1)
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          router.push("/auth/login");
+          return;
+        }
+        setCurrentUserId(user.id);
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, branch_id")
+          .eq("id", user.id)
           .single();
-        resolvedBranchId = branch?.id ?? null;
-      }
 
-      setActiveBranchId(resolvedBranchId);
-      setCheckingAuth(false);
-      await loadCustomerCredits(resolvedBranchId);
-      await loadRegisteredCustomers(resolvedBranchId, 1);
+        const resolvedBranchId = await ensureActiveBranch(
+          user.id,
+          profile?.role,
+          profile?.branch_id ?? null,
+        );
+
+        setActiveBranchId(resolvedBranchId);
+        setCheckingAuth(false);
+        await loadCustomerCredits(resolvedBranchId);
+        await loadRegisteredCustomers(resolvedBranchId, 1);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to resolve active branch.";
+        alert(message);
+        setCheckingAuth(false);
+      }
     };
     init();
-  }, [loadCustomerCredits, loadRegisteredCustomers, router]);
+  }, [ensureActiveBranch, loadCustomerCredits, loadRegisteredCustomers, router]);
 
   const customers = useMemo(() => {
     const map = new Map<string, CustomerSummary>();
@@ -300,18 +353,31 @@ export default function CustomersPage() {
     if (!currentUserId) return alert("Missing user context.");
 
     let branchId = activeBranchId;
-    if (!branchId) {
-      const { data: branch } = await supabase
-        .from("branches")
-        .select("id")
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .single();
-      branchId = branch?.id ?? null;
-      if (branchId) setActiveBranchId(branchId);
+    try {
+      if (!branchId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, branch_id")
+          .eq("id", currentUserId)
+          .single();
+
+        branchId = await ensureActiveBranch(
+          currentUserId,
+          profile?.role,
+          profile?.branch_id ?? null,
+        );
+
+        if (branchId) setActiveBranchId(branchId);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Automatic branch setup failed.";
+      return alert(message);
     }
     if (!branchId)
-      return alert("No branch found. Please create a branch first.");
+      return alert("No branch found and automatic branch setup failed.");
 
     if (!customerForm.fullName.trim()) {
       return alert("Customer name is required.");

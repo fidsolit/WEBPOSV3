@@ -62,7 +62,7 @@ export default function Login() {
           setIsChecking(false);
           return;
         }
-        router.push("/pos");
+        router.push(profile?.role === "admin" ? "/admin" : "/pos");
       } else {
         setIsChecking(false);
       }
@@ -110,7 +110,7 @@ export default function Login() {
     }
 
     await logUserActivity("login");
-    router.push("/pos");
+    router.push(profile?.role === "admin" ? "/admin" : "/pos");
   };
 
   // While checking session, show a clean background or loader
