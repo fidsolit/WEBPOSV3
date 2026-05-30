@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getAuthRedirectURL } from "@/lib/authRedirect";
+import { useRouter } from "next/navigation";
 import {
   Mail,
   Lock,
@@ -12,6 +14,8 @@ import {
 } from "lucide-react";
 
 export default function RegisterPage() {
+  const router = useRouter();
+
   // Form State
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,6 +23,7 @@ export default function RegisterPage() {
 
   // UI State
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTouched, setIsTouched] = useState(false);
 
@@ -69,18 +74,31 @@ export default function RegisterPage() {
 
       if (data?.session) {
         await supabase.auth.signOut();
-        setError(
-          "Signup successful. Please wait for admin approval before logging in.",
-        );
+        router.push("/auth/login");
       } else {
-        setError(
-          "Success! Please check your email for confirmation, then wait for admin approval.",
-        );
+        router.push("/auth/login");
       }
     } catch {
       setError("An unexpected connection error occurred.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setError(null);
+    setGoogleLoading(true);
+
+    const { error: googleError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: getAuthRedirectURL("/auth/login"),
+      },
+    });
+
+    if (googleError) {
+      setError(googleError.message);
+      setGoogleLoading(false);
     }
   };
 
@@ -193,7 +211,7 @@ export default function RegisterPage() {
 
           <button
             type="submit"
-            disabled={loading || (isTouched && !emailValid)}
+            disabled={loading || googleLoading || (isTouched && !emailValid)}
             className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
@@ -204,9 +222,30 @@ export default function RegisterPage() {
           </button>
         </form>
 
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+            Or
+          </span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleSignup}
+          disabled={loading || googleLoading}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 font-bold text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          <span className="flex items-center justify-center gap-3">
+            <GoogleIcon />
+            {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+          </span>
+        </button>
+
         <p className="text-center mt-8 text-sm text-slate-500">
           Already have an account?{" "}
           <button
+            type="button"
             className="text-black font-bold hover:underline"
             onClick={() => router.push("/auth/login")}
           >
@@ -215,5 +254,28 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M21.805 12.023c0-.79-.064-1.364-.202-1.96H12.24v3.71h5.497c-.11.922-.706 2.31-2.03 3.243l-.019.124 2.966 2.252.206.02c1.892-1.716 2.945-4.243 2.945-7.389Z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12.24 21.75c2.692 0 4.95-.869 6.6-2.36l-3.153-2.396c-.844.575-1.977.976-3.447.976-2.637 0-4.875-1.716-5.67-4.088l-.119.01-3.084 2.339-.041.112c1.64 3.18 5 5.407 8.914 5.407Z"
+        fill="#34A853"
+      />
+      <path
+        d="M6.57 13.882a5.776 5.776 0 0 1-.332-1.882c0-.656.12-1.291.322-1.882l-.006-.126-3.123-2.376-.102.047A9.652 9.652 0 0 0 2.22 12c0 1.56.377 3.037 1.048 4.337l3.302-2.455Z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12.24 6.03c1.854 0 3.104.79 3.816 1.45l2.786-2.67C17.18 3.25 14.933 2.25 12.24 2.25c-3.914 0-7.274 2.228-8.912 5.413l3.23 2.454c.805-2.37 3.043-4.087 5.682-4.087Z"
+        fill="#EB4335"
+      />
+    </svg>
   );
 }

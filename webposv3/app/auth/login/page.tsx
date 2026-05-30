@@ -5,6 +5,7 @@ import { useState, useEffect } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
 import { logUserActivity } from "@/lib/activityLogger";
 import { applyTheme, resolvePreferredTheme } from "@/lib/theme";
+import { getAuthRedirectURL } from "@/lib/authRedirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Moon, Sun, Loader2 } from "lucide-react";
@@ -15,6 +16,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [isChecking, setIsChecking] = useState(true); // Prevent form flicker
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [approvalMessage, setApprovalMessage] = useState("");
@@ -111,6 +113,23 @@ export default function Login() {
 
     await logUserActivity("login");
     router.push(profile?.role === "admin" ? "/admin" : "/pos");
+  };
+
+  const handleGoogleLogin = async () => {
+    setErrorMessage("");
+    setGoogleLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: getAuthRedirectURL("/auth/login"),
+      },
+    });
+
+    if (error) {
+      setErrorMessage(error.message);
+      setGoogleLoading(false);
+    }
   };
 
   // While checking session, show a clean background or loader
@@ -379,10 +398,46 @@ export default function Login() {
 
         <button
           onClick={handleLogin}
-          disabled={loading}
+          disabled={loading || googleLoading}
           className="w-full bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition disabled:opacity-50 font-semibold"
         >
           {loading ? "Signing in..." : "Sign In"}
+        </button>
+
+        <div className="my-4 flex items-center gap-3">
+          <div
+            className={`h-px flex-1 ${
+              theme === "dark" ? "bg-slate-700" : "bg-slate-200"
+            }`}
+          />
+          <span
+            className={`text-xs font-semibold uppercase tracking-[0.2em] ${
+              theme === "dark" ? "text-slate-500" : "text-slate-400"
+            }`}
+          >
+            Or
+          </span>
+          <div
+            className={`h-px flex-1 ${
+              theme === "dark" ? "bg-slate-700" : "bg-slate-200"
+            }`}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loading || googleLoading}
+          className={`w-full rounded-xl border px-4 py-3 font-semibold transition disabled:opacity-50 ${
+            theme === "dark"
+              ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+              : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          <span className="flex items-center justify-center gap-3">
+            <GoogleIcon />
+            {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+          </span>
         </button>
 
         <p
@@ -458,5 +513,28 @@ export default function Login() {
         </div>
       )}
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+      <path
+        d="M21.805 12.023c0-.79-.064-1.364-.202-1.96H12.24v3.71h5.497c-.11.922-.706 2.31-2.03 3.243l-.019.124 2.966 2.252.206.02c1.892-1.716 2.945-4.243 2.945-7.389Z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12.24 21.75c2.692 0 4.95-.869 6.6-2.36l-3.153-2.396c-.844.575-1.977.976-3.447.976-2.637 0-4.875-1.716-5.67-4.088l-.119.01-3.084 2.339-.041.112c1.64 3.18 5 5.407 8.914 5.407Z"
+        fill="#34A853"
+      />
+      <path
+        d="M6.57 13.882a5.776 5.776 0 0 1-.332-1.882c0-.656.12-1.291.322-1.882l-.006-.126-3.123-2.376-.102.047A9.652 9.652 0 0 0 2.22 12c0 1.56.377 3.037 1.048 4.337l3.302-2.455Z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12.24 6.03c1.854 0 3.104.79 3.816 1.45l2.786-2.67C17.18 3.25 14.933 2.25 12.24 2.25c-3.914 0-7.274 2.228-8.912 5.413l3.23 2.454c.805-2.37 3.043-4.087 5.682-4.087Z"
+        fill="#EB4335"
+      />
+    </svg>
   );
 }
