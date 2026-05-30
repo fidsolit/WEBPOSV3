@@ -1,7 +1,7 @@
 "use client";
 import { KeyboardEvent } from "react";
 
-import { useState, useEffect } from "react"; // Added useEffect
+import { useState, useEffect, useSyncExternalStore } from "react"; // Added useEffect
 import { supabase } from "@/lib/supabaseClient";
 import { logUserActivity } from "@/lib/activityLogger";
 import { applyTheme, resolvePreferredTheme } from "@/lib/theme";
@@ -11,6 +11,11 @@ import Link from "next/link";
 import { Moon, Sun, Loader2 } from "lucide-react";
 
 export default function Login() {
+  const isMounted = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -22,7 +27,7 @@ export default function Login() {
   const [approvalMessage, setApprovalMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">(() =>
-    resolvePreferredTheme(),
+    typeof window === "undefined" ? "light" : resolvePreferredTheme(),
   );
   const expiredReasonMessage =
     searchParams.get("reason") === "expired"
@@ -137,12 +142,12 @@ export default function Login() {
     return (
       <div
         className={`min-h-screen flex items-center justify-center ${
-          theme === "dark" ? "bg-slate-950" : "bg-slate-100"
+          isMounted && theme === "dark" ? "bg-slate-950" : "bg-slate-100"
         }`}
       >
         <Loader2
           className={`h-8 w-8 animate-spin ${
-            theme === "dark" ? "text-slate-300" : "text-slate-600"
+            isMounted && theme === "dark" ? "text-slate-300" : "text-slate-600"
           }`}
         />
       </div>
@@ -152,7 +157,7 @@ export default function Login() {
   return (
     <div
       className={`min-h-screen flex items-center justify-center relative p-4 ${
-        theme === "dark"
+        isMounted && theme === "dark"
           ? "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950"
           : "bg-gradient-to-b from-slate-100 via-white to-slate-100"
       }`}
@@ -162,18 +167,18 @@ export default function Login() {
           setTheme((current) => (current === "light" ? "dark" : "light"))
         }
         className={`absolute top-5 right-5 inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold transition ${
-          theme === "dark"
+          isMounted && theme === "dark"
             ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
         }`}
       >
-        {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-        {theme === "dark" ? "Light Mode" : "Dark Mode"}
+        {isMounted && theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+        {isMounted && theme === "dark" ? "Light Mode" : "Dark Mode"}
       </button>
 
       <div
         className={`w-full max-w-md rounded-3xl p-8 border shadow-2xl ${
-          theme === "dark"
+          isMounted && theme === "dark"
             ? "bg-slate-900 border-slate-800 text-slate-100"
             : "bg-white border-slate-100 text-slate-900"
         }`}
@@ -182,7 +187,9 @@ export default function Login() {
           <div className="flex justify-center mb-4">
             <svg
               viewBox="0 0 540 150"
-              className={`h-16 w-auto ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}
+              className={`h-16 w-auto ${
+                isMounted && theme === "dark" ? "text-slate-100" : "text-slate-900"
+              }`}
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -334,7 +341,7 @@ export default function Login() {
 
           <p
             className={`text-sm mt-1 ${
-              theme === "dark" ? "text-slate-400" : "text-slate-500"
+              isMounted && theme === "dark" ? "text-slate-400" : "text-slate-500"
             }`}
           >
             Secure sign-in to your dashboard
@@ -343,7 +350,7 @@ export default function Login() {
         {(errorMessage || expiredReasonMessage) && (
           <div
             className={`mb-4 rounded-xl px-4 py-3 text-sm ${
-              theme === "dark"
+              isMounted && theme === "dark"
                 ? "bg-rose-500/10 text-rose-200 border border-rose-500/20"
                 : "bg-rose-50 text-rose-700 border border-rose-100"
             }`}
@@ -355,7 +362,7 @@ export default function Login() {
         <div className="mb-4">
           <label
             className={`text-sm font-medium ${
-              theme === "dark" ? "text-slate-300" : "text-slate-600"
+              isMounted && theme === "dark" ? "text-slate-300" : "text-slate-600"
             }`}
           >
             Email
@@ -363,7 +370,7 @@ export default function Login() {
           <input
             type="email"
             className={`w-full mt-1 p-3 rounded-xl outline-none border focus:ring-2 ${
-              theme === "dark"
+              isMounted && theme === "dark"
                 ? "bg-slate-800 border-slate-700 text-slate-100 focus:ring-blue-500/50"
                 : "bg-white border-slate-200 text-slate-900 focus:ring-blue-200"
             }`}
@@ -377,7 +384,7 @@ export default function Login() {
         <div className="mb-6">
           <label
             className={`text-sm font-medium ${
-              theme === "dark" ? "text-slate-300" : "text-slate-600"
+              isMounted && theme === "dark" ? "text-slate-300" : "text-slate-600"
             }`}
           >
             Password
@@ -386,7 +393,7 @@ export default function Login() {
             type="password"
             onKeyDown={handleKeyDown}
             className={`w-full mt-1 p-3 rounded-xl outline-none border focus:ring-2 ${
-              theme === "dark"
+              isMounted && theme === "dark"
                 ? "bg-slate-800 border-slate-700 text-slate-100 focus:ring-blue-500/50"
                 : "bg-white border-slate-200 text-slate-900 focus:ring-blue-200"
             }`}
@@ -407,19 +414,19 @@ export default function Login() {
         <div className="my-4 flex items-center gap-3">
           <div
             className={`h-px flex-1 ${
-              theme === "dark" ? "bg-slate-700" : "bg-slate-200"
+              isMounted && theme === "dark" ? "bg-slate-700" : "bg-slate-200"
             }`}
           />
           <span
             className={`text-xs font-semibold uppercase tracking-[0.2em] ${
-              theme === "dark" ? "text-slate-500" : "text-slate-400"
+              isMounted && theme === "dark" ? "text-slate-500" : "text-slate-400"
             }`}
           >
             Or
           </span>
           <div
             className={`h-px flex-1 ${
-              theme === "dark" ? "bg-slate-700" : "bg-slate-200"
+              isMounted && theme === "dark" ? "bg-slate-700" : "bg-slate-200"
             }`}
           />
         </div>
@@ -429,7 +436,7 @@ export default function Login() {
           onClick={handleGoogleLogin}
           disabled={loading || googleLoading}
           className={`w-full rounded-xl border px-4 py-3 font-semibold transition disabled:opacity-50 ${
-            theme === "dark"
+            isMounted && theme === "dark"
               ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
               : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
           }`}
@@ -442,7 +449,7 @@ export default function Login() {
 
         <p
           className={`text-xs text-center mt-4 ${
-            theme === "dark" ? "text-slate-500" : "text-slate-400"
+            isMounted && theme === "dark" ? "text-slate-500" : "text-slate-400"
           }`}
         >
           POS System - Secure Login
@@ -451,7 +458,7 @@ export default function Login() {
           <Link
             href="/auth/register"
             className={`text-sm font-semibold hover:underline ${
-              theme === "dark" ? "text-blue-300" : "text-blue-600"
+              isMounted && theme === "dark" ? "text-blue-300" : "text-blue-600"
             }`}
           >
             Do not have an account? Sign up here
@@ -463,26 +470,28 @@ export default function Login() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div
             className={`w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden ${
-              theme === "dark"
+              isMounted && theme === "dark"
                 ? "bg-slate-900 border-slate-700"
                 : "bg-white border-slate-100"
             }`}
           >
             <div
               className={`px-6 py-5 border-b ${
-                theme === "dark" ? "border-slate-700" : "border-slate-100"
+                isMounted && theme === "dark"
+                  ? "border-slate-700"
+                  : "border-slate-100"
               }`}
             >
               <h2
                 className={`text-lg font-bold ${
-                  theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  isMounted && theme === "dark" ? "text-slate-100" : "text-slate-900"
                 }`}
               >
                 Approval Required
               </h2>
               <p
                 className={`text-sm mt-1 ${
-                  theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  isMounted && theme === "dark" ? "text-slate-400" : "text-slate-500"
                 }`}
               >
                 Cashier account verification
@@ -491,7 +500,7 @@ export default function Login() {
             <div className="px-6 py-5">
               <p
                 className={`text-sm leading-relaxed ${
-                  theme === "dark" ? "text-slate-200" : "text-slate-700"
+                  isMounted && theme === "dark" ? "text-slate-200" : "text-slate-700"
                 }`}
               >
                 {approvalMessage}
@@ -499,7 +508,7 @@ export default function Login() {
             </div>
             <div
               className={`px-6 py-4 flex justify-end ${
-                theme === "dark" ? "bg-slate-800" : "bg-slate-50"
+                isMounted && theme === "dark" ? "bg-slate-800" : "bg-slate-50"
               }`}
             >
               <button

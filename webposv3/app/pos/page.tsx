@@ -116,6 +116,8 @@ interface SaleDetail {
         method: string | null;
         amount: number;
         status: string | null;
+        amount_tendered: number | null;
+        change_amount: number | null;
       }[]
     | null;
   cashier_profile?:
@@ -676,6 +678,8 @@ export default function POSDashboard() {
         sale_id: saleData.id,
         method: "cash",
         amount: cartSubtotal,
+        amount_tendered: Number(cashAmount || 0),
+        change_amount: Number(change || 0),
       },
     ]);
 
@@ -946,7 +950,9 @@ export default function POSDashboard() {
         payments (
           method,
           amount,
-          status
+          status,
+          amount_tendered,
+          change_amount
         )
       `,
       )
@@ -1988,16 +1994,46 @@ export default function POSDashboard() {
                         selectedSaleDetail.payments.map((payment, index) => (
                           <div
                             key={`${payment.method || "payment"}-${index}`}
-                            className="flex items-center justify-between text-sm"
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-3"
                           >
-                            <span className="capitalize text-slate-600">
-                              {payment.method || "Unknown"}
-                            </span>
-                            <span className="font-semibold text-slate-900">
-                              {pesoFormatter.format(
-                                Number(payment.amount ?? 0),
-                              )}
-                            </span>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="capitalize text-slate-600">
+                                {payment.method || "Unknown"}
+                              </span>
+                              <span className="font-semibold text-slate-900">
+                                {pesoFormatter.format(
+                                  Number(payment.amount ?? 0),
+                                )}
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-1 text-xs text-slate-500">
+                              <div className="flex items-center justify-between">
+                                <span>Paid Amount</span>
+                                <span className="font-medium text-slate-700">
+                                  {pesoFormatter.format(Number(payment.amount ?? 0))}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>Cash Received</span>
+                                <span className="font-medium text-slate-700">
+                                  {payment.amount_tendered != null
+                                    ? pesoFormatter.format(
+                                        Number(payment.amount_tendered ?? 0),
+                                      )
+                                    : "-"}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>Change</span>
+                                <span className="font-medium text-slate-700">
+                                  {payment.change_amount != null
+                                    ? pesoFormatter.format(
+                                        Number(payment.change_amount ?? 0),
+                                      )
+                                    : "-"}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         ))
                       ) : (

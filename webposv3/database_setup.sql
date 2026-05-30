@@ -68,8 +68,14 @@ CREATE TABLE IF NOT EXISTS public.payments (
   sale_id uuid NOT NULL REFERENCES public.sales(id) ON DELETE CASCADE,
   method text,
   amount numeric(12,2) NOT NULL DEFAULT 0,
+  amount_tendered numeric(12,2),
+  change_amount numeric(12,2),
   created_at timestamp without time zone NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.payments
+  ADD COLUMN IF NOT EXISTS amount_tendered numeric(12,2),
+  ADD COLUMN IF NOT EXISTS change_amount numeric(12,2);
 
 CREATE OR REPLACE FUNCTION public.is_admin(check_user_id uuid)
 RETURNS boolean
