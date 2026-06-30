@@ -160,6 +160,8 @@ interface LowStockItem {
   } | null;
 }
 
+type PaymentMethod = "cash" | "credit";
+
 export default function POSDashboard() {
   const router = useRouter();
   const pesoFormatter = new Intl.NumberFormat("en-PH", {
@@ -207,8 +209,26 @@ export default function POSDashboard() {
   const lastLoadedRecentTransactionsPage = useRef(1);
 
   //payment  states
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [cashAmount, setCashAmount] = useState<string>("");
+  const [saleCustomerName, setSaleCustomerName] = useState("");
+  const [saleCustomerContact, setSaleCustomerContact] = useState("");
+  const [saleCreditNote, setSaleCreditNote] = useState("");
+  const [salePromiseToPayDate, setSalePromiseToPayDate] = useState("");
   const recentTransactionsPageSize = 5;
+
+  const resetSaleForm = useCallback(() => {
+    setCart([]);
+    setItemSearch("");
+    setBarcodeInput("");
+    setPaymentMethod("cash");
+    setCashAmount("");
+    setchange(0);
+    setSaleCustomerName("");
+    setSaleCustomerContact("");
+    setSaleCreditNote("");
+    setSalePromiseToPayDate("");
+  }, []);
 
   const refreshDashboardData = useCallback(async () => {
     try {
@@ -528,9 +548,75 @@ export default function POSDashboard() {
   }, [activeBranchId]);
 
   const openNewSaleModal = async () => {
+    resetSaleForm();
     setIsModalOpen(true);
     await loadCatalogItems();
   };
+
+  const ensureCustomerRecord = useCallback(
+    async (branchId: string, userId: string, fullName: string, contact: string) => {
+      const trimmedName = fullName.trim();
+      const trimmedContact = contact.trim();
+
+      if (!trimmedName) {
+        return;
+      }
+
+      let existingCustomerId: string | null = null;
+
+      if (trimmedContact) {
+        const { data: contactMatch, error: contactMatchError } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("branch_id", branchId)
+          .eq("contact_number", trimmedContact)
+          .limit(1)
+          .maybeSingle();
+
+        if (contactMatchError && contactMatchError.code !== "PGRST116") {
+          throw new Error(contactMatchError.message);
+        }
+
+        existingCustomerId = contactMatch?.id ?? null;
+      }
+
+      if (!existingCustomerId) {
+        const { data: nameMatch, error: nameMatchError } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("branch_id", branchId)
+          .ilike("full_name", trimmedName)
+          .limit(1)
+          .maybeSingle();
+
+        if (nameMatchError && nameMatchError.code !== "PGRST116") {
+          throw new Error(nameMatchError.message);
+        }
+
+        existingCustomerId = nameMatch?.id ?? null;
+      }
+
+      if (existingCustomerId) {
+        return;
+      }
+
+      const { error: insertCustomerError } = await supabase
+        .from("customers")
+        .insert([
+          {
+            full_name: trimmedName,
+            contact_number: trimmedContact || null,
+            branch_id: branchId,
+            created_by: userId,
+          },
+        ]);
+
+      if (insertCustomerError) {
+        throw new Error(insertCustomerError.message);
+      }
+    },
+    [],
+  );
 
   const addItemToCart = (item: ProductCatalogItem) => {
     setCart((current) => {
@@ -577,6 +663,12 @@ export default function POSDashboard() {
     }
     if (cart.length === 0) {
       return alert("Add at least one item to cart.");
+    }
+    if (paymentMethod === "cash" && Number(cashAmount) < cartSubtotal) {
+      return alert("Cash amount must cover the sale total.");
+    }
+    if (paymentMethod === "credit" && !saleCustomerName.trim()) {
+      return alert("Customer name is required for credit sales.");
     }
 
     setSubmittingSale(true);
@@ -627,6 +719,10 @@ export default function POSDashboard() {
           status: "completed",
           branch_id: activeBranchId,
           user_id: currentUserId,
+          notes:
+            paymentMethod === "credit" && saleCustomerName.trim()
+              ? `Credit sale for ${saleCustomerName.trim()}`
+              : null,
         },
       ])
       .select("id")
@@ -676,10 +772,11 @@ export default function POSDashboard() {
     const { error: paymentError } = await supabase.from("payments").insert([
       {
         sale_id: saleData.id,
-        method: "cash",
+        method: paymentMethod,
         amount: cartSubtotal,
-        amount_tendered: Number(cashAmount || 0),
-        change_amount: Number(change || 0),
+        amount_tendered:
+          paymentMethod === "cash" ? Number(cashAmount || 0) : 0,
+        change_amount: paymentMethod === "cash" ? Number(change || 0) : 0,
       },
     ]);
 
@@ -687,6 +784,47 @@ export default function POSDashboard() {
       alert(paymentError.message);
       setSubmittingSale(false);
       return;
+    }
+
+    if (paymentMethod === "credit") {
+      try {
+        await ensureCustomerRecord(
+          activeBranchId,
+          currentUserId,
+          saleCustomerName,
+          saleCustomerContact,
+        );
+      } catch (customerError) {
+        alert(
+          customerError instanceof Error
+            ? customerError.message
+            : "Failed to save customer record.",
+        );
+        setSubmittingSale(false);
+        return;
+      }
+
+      const { error: creditEntryError } = await supabase
+        .from("customer_credits")
+        .insert([
+          {
+            customer_name: saleCustomerName.trim(),
+            contact_number: saleCustomerContact.trim() || null,
+            amount: cartSubtotal,
+            note: saleCreditNote.trim() || null,
+            promise_to_pay_date: salePromiseToPayDate || null,
+            is_paid: false,
+            payment_status: "pending",
+            branch_id: activeBranchId,
+            created_by: currentUserId,
+          },
+        ]);
+
+      if (creditEntryError) {
+        alert(creditEntryError.message);
+        setSubmittingSale(false);
+        return;
+      }
     }
 
     for (const item of cart) {
@@ -732,9 +870,7 @@ export default function POSDashboard() {
     }
 
     setIsModalOpen(false);
-    setCart([]);
-    setItemSearch("");
-    setBarcodeInput("");
+    resetSaleForm();
     await refreshDashboardData();
     setSubmittingSale(false);
   };
@@ -1573,7 +1709,10 @@ export default function POSDashboard() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">New Sale</h2>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  resetSaleForm();
+                }}
                 className="p-2 hover:bg-slate-100 rounded-full"
               >
                 <X size={20} />
@@ -1686,50 +1825,116 @@ export default function POSDashboard() {
                     <span>Total</span>
                     <span>₱{cartSubtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Cash</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="0.00"
-                      value={cashAmount}
-                      // This blocks 'e', '+', and '-' which are technically allowed in type="number"
-                      onKeyDown={(e) => {
-                        if (["e", "E", "+", "-"].includes(e.key)) {
-                          e.preventDefault();
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-semibold text-slate-600">
+                        Payment Method
+                      </label>
+                      <select
+                        value={paymentMethod}
+                        onChange={(e) =>
+                          setPaymentMethod(e.target.value as PaymentMethod)
                         }
-                      }}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        // Strict numeric check using regex to ensure it's only numbers and one decimal
-                        if (val === "" || /^\d*\.?\d*$/.test(val)) {
-                          setCashAmount(val);
-                          setchange(Number(val) - cartSubtotal);
-                        }
-                      }}
-                      className={`w-50 p-2 ml-5 bg-slate-50 border rounded-xl outline-none focus:ring-2 transition-all ${
-                        Number(cashAmount) < cartSubtotal && cashAmount !== ""
-                          ? "border-red-500 focus:ring-red-200"
-                          : "border-slate-200 focus:ring-blue-600"
-                      }`}
-                    />
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none transition-all focus:ring-2 focus:ring-blue-600"
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="credit">Credit</option>
+                      </select>
+                    </div>
+
+                    {paymentMethod === "cash" ? (
+                      <>
+                        <div className="flex justify-between font-bold text-lg">
+                          <span>Cash</span>
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="0.00"
+                            value={cashAmount}
+                            onKeyDown={(e) => {
+                              if (["e", "E", "+", "-"].includes(e.key)) {
+                                e.preventDefault();
+                              }
+                            }}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                                setCashAmount(val);
+                                setchange(Number(val) - cartSubtotal);
+                              }
+                            }}
+                            className={`w-50 rounded-xl border bg-slate-50 p-2 outline-none transition-all focus:ring-2 ${
+                              Number(cashAmount) < cartSubtotal &&
+                              cashAmount !== ""
+                                ? "border-red-500 focus:ring-red-200"
+                                : "border-slate-200 focus:ring-blue-600"
+                            }`}
+                          />
+                        </div>
+                        <div className="flex justify-between font-bold text-lg">
+                          <span>Change</span>
+                          <span>PHP {change.toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-3">
+                        <input
+                          placeholder="Customer name"
+                          value={saleCustomerName}
+                          onChange={(e) => setSaleCustomerName(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-600"
+                        />
+                        <input
+                          placeholder="Contact number (optional)"
+                          value={saleCustomerContact}
+                          onChange={(e) =>
+                            setSaleCustomerContact(e.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-600"
+                        />
+                        <textarea
+                          placeholder="Credit note (optional)"
+                          value={saleCreditNote}
+                          onChange={(e) => setSaleCreditNote(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-600"
+                        />
+                        <div>
+                          <label className="mb-1 block text-sm font-semibold text-slate-600">
+                            Promise to Pay Date (optional)
+                          </label>
+                          <input
+                            type="date"
+                            value={salePromiseToPayDate}
+                            onChange={(e) =>
+                              setSalePromiseToPayDate(e.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 outline-none focus:ring-2 focus:ring-blue-600"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          If this customer is not registered yet, they will be
+                          added automatically when the sale is completed.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  {/* //change codes */}
-
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Change</span>
-
-                    <span>₱{change.toFixed(2)}</span>
-                  </div>
-
-                  {/* end change codes */}
                   <button
-                    disabled={submittingSale || cart.length === 0}
+                    disabled={
+                      submittingSale ||
+                      cart.length === 0 ||
+                      (paymentMethod === "cash" &&
+                        Number(cashAmount) < cartSubtotal) ||
+                      (paymentMethod === "credit" &&
+                        !saleCustomerName.trim())
+                    }
                     onClick={handleAddNewSale}
-                    hidden={Number(cashAmount) < cartSubtotal}
                     className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
                   >
-                    {submittingSale ? "Processing..." : "Complete Sale"}
+                    {submittingSale
+                      ? "Processing..."
+                      : paymentMethod === "credit"
+                        ? "Complete Credit Sale"
+                        : "Complete Sale"}
                   </button>
                 </div>
               </div>
@@ -2127,3 +2332,4 @@ function StatCard({
     </div>
   );
 }
+
