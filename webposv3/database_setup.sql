@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS public.products (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   barcode text,
+  product_type text NOT NULL DEFAULT 'product'
+    CHECK (product_type IN ('product', 'service')),
   price numeric(12,2) NOT NULL DEFAULT 0,
   cost numeric(12,2) NOT NULL DEFAULT 0,
   created_at timestamp without time zone NOT NULL DEFAULT now(),
@@ -170,8 +172,22 @@ WITH CHECK (
 -- 2) Products, inventory, sales, payments
 -- -----------------------------
 ALTER TABLE public.products
+  ADD COLUMN IF NOT EXISTS product_type text NOT NULL DEFAULT 'product',
   ADD COLUMN IF NOT EXISTS updated_at timestamp without time zone DEFAULT now(),
   ADD COLUMN IF NOT EXISTS low_stock_threshold integer NOT NULL DEFAULT 10;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'products_product_type_check'
+  ) THEN
+    ALTER TABLE public.products
+      ADD CONSTRAINT products_product_type_check
+      CHECK (product_type IN ('product', 'service'));
+  END IF;
+END $$;
 
 DO $$
 BEGIN

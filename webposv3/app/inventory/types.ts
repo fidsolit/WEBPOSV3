@@ -1,9 +1,12 @@
+export type ProductType = "product" | "service";
+
 export interface InventoryProduct {
   id: string;
   name: string;
   price: number;
   cost: number;
   barcode: string | null;
+  product_type?: ProductType;
 }
 
 export interface InventoryItem {
@@ -24,6 +27,7 @@ export interface ProductOption {
   id: string;
   name: string;
   barcode?: string | null;
+  product_type?: ProductType;
 }
 
 export interface RecentLossItem {
@@ -79,6 +83,7 @@ export interface RecentInventoryHistoryItem {
 }
 
 export interface NewItemFormState {
+  productType: ProductType;
   name: string;
   barcode: string;
   stock: string;

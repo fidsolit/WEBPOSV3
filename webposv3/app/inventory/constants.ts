@@ -6,6 +6,7 @@ import type {
 } from "./types";
 
 export const DEFAULT_NEW_ITEM_FORM: NewItemFormState = {
+  productType: "product",
   name: "",
   barcode: "",
   stock: "",

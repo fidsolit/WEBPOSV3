@@ -54,6 +54,7 @@ interface ProductCatalogItem {
   price: number;
   cost: number;
   barcode: string | null;
+  product_type: "product" | "service";
 }
 
 interface CartItem extends ProductCatalogItem {
@@ -77,6 +78,14 @@ interface SaleItemForVoid {
   product_id: string;
   quantity: number;
   unit_cost: number | null;
+  products:
+    | {
+        product_type: "product" | "service" | null;
+      }
+    | {
+        product_type: "product" | "service" | null;
+      }[]
+    | null;
 }
 
 interface SaleDetailLineItem {
@@ -506,7 +515,8 @@ export default function POSDashboard() {
           name,
           price,
           cost,
-          barcode
+          barcode,
+          product_type
         )
       `,
       )
@@ -514,8 +524,19 @@ export default function POSDashboard() {
       .gt("stock", 0)
       .order("updated_at", { ascending: false });
 
+    const { data: serviceData, error: serviceError } = await supabase
+      .from("products")
+      .select("id, name, price, cost, barcode, product_type")
+      .eq("product_type", "service")
+      .order("updated_at", { ascending: false });
+
     if (error) {
       console.error("Failed loading catalog:", error.message);
+      return;
+    }
+
+    if (serviceError) {
+      console.error("Failed loading services:", serviceError.message);
       return;
     }
 
@@ -539,12 +560,19 @@ export default function POSDashboard() {
         | null;
     }[];
 
-    const items = rows
+    const stockedItems = rows
       .map((row) =>
         Array.isArray(row.products) ? row.products[0] : row.products,
       )
       .filter((p): p is ProductCatalogItem => Boolean(p));
-    setCatalogItems(items);
+
+    const serviceItems = ((serviceData ?? []) as ProductCatalogItem[]) ?? [];
+    const mergedItems = [...stockedItems, ...serviceItems];
+    const uniqueItems = Array.from(
+      new Map(mergedItems.map((item) => [item.id, item])).values(),
+    );
+
+    setCatalogItems(uniqueItems);
   }, [activeBranchId]);
 
   const openNewSaleModal = async () => {
@@ -673,27 +701,32 @@ export default function POSDashboard() {
 
     setSubmittingSale(true);
 
-    const cartProductIds = cart.map((item) => item.id);
-    const { data: inventoryRows, error: inventoryError } = await supabase
-      .from("inventory")
-      .select("id, product_id, stock")
-      .eq("branch_id", activeBranchId)
-      .in("product_id", cartProductIds);
+    const stockedCartItems = cart.filter((item) => item.product_type === "product");
+    const cartProductIds = stockedCartItems.map((item) => item.id);
+    let inventoryMap = new Map<string, InventoryForSale>();
 
-    if (inventoryError) {
-      alert(inventoryError.message);
-      setSubmittingSale(false);
-      return;
+    if (cartProductIds.length > 0) {
+      const { data: inventoryRows, error: inventoryError } = await supabase
+        .from("inventory")
+        .select("id, product_id, stock")
+        .eq("branch_id", activeBranchId)
+        .in("product_id", cartProductIds);
+
+      if (inventoryError) {
+        alert(inventoryError.message);
+        setSubmittingSale(false);
+        return;
+      }
+
+      inventoryMap = new Map(
+        ((inventoryRows ?? []) as InventoryForSale[]).map((row) => [
+          row.product_id,
+          row,
+        ]),
+      );
     }
 
-    const inventoryMap = new Map(
-      ((inventoryRows ?? []) as InventoryForSale[]).map((row) => [
-        row.product_id,
-        row,
-      ]),
-    );
-
-    for (const item of cart) {
+    for (const item of stockedCartItems) {
       const inv = inventoryMap.get(item.id);
       if (!inv) {
         alert(`No inventory record found for "${item.name}".`);
@@ -827,7 +860,7 @@ export default function POSDashboard() {
       }
     }
 
-    for (const item of cart) {
+    for (const item of stockedCartItems) {
       const inv = inventoryMap.get(item.id)!;
       const newStock = inv.stock - item.quantity;
       const { error: updateInventoryError } = await supabase
@@ -847,7 +880,7 @@ export default function POSDashboard() {
       }
     }
 
-    const stockMovementPayload = cart.map((item) => ({
+    const stockMovementPayload = stockedCartItems.map((item) => ({
       branch_id: activeBranchId,
       product_id: item.id,
       movement_type: "sale" as const,
@@ -859,14 +892,16 @@ export default function POSDashboard() {
       created_by: currentUserId,
     }));
 
-    const { error: stockMovementError } = await supabase
-      .from("stock_movements")
-      .insert(stockMovementPayload);
+    if (stockMovementPayload.length > 0) {
+      const { error: stockMovementError } = await supabase
+        .from("stock_movements")
+        .insert(stockMovementPayload);
 
-    if (stockMovementError) {
-      alert(
-        `Sale completed but failed to save stock history: ${stockMovementError.message}`,
-      );
+      if (stockMovementError) {
+        alert(
+          `Sale completed but failed to save stock history: ${stockMovementError.message}`,
+        );
+      }
     }
 
     setIsModalOpen(false);
@@ -960,7 +995,17 @@ export default function POSDashboard() {
 
     const { data: saleItemsData, error: saleItemsError } = await supabase
       .from("sale_items")
-      .select("id, product_id, quantity, unit_cost")
+      .select(
+        `
+        id,
+        product_id,
+        quantity,
+        unit_cost,
+        products (
+          product_type
+        )
+      `,
+      )
       .eq("sale_id", saleId);
 
     if (saleItemsError) {
@@ -969,9 +1014,15 @@ export default function POSDashboard() {
     }
 
     const saleItems = (saleItemsData as SaleItemForVoid[]) ?? [];
+    const stockedSaleItems = saleItems.filter((item) => {
+      const product = Array.isArray(item.products)
+        ? (item.products[0] ?? null)
+        : item.products;
+      return product?.product_type !== "service";
+    });
     const productIds = Array.from(
       new Set(
-        saleItems
+        stockedSaleItems
           .map((item) => item.product_id)
           .filter((productId): productId is string => Boolean(productId)),
       ),
@@ -996,7 +1047,7 @@ export default function POSDashboard() {
         ]),
       );
 
-      for (const item of saleItems) {
+      for (const item of stockedSaleItems) {
         const inventoryRecord = inventoryMap.get(item.product_id);
         if (!inventoryRecord) {
           alert(
@@ -1754,7 +1805,12 @@ export default function POSDashboard() {
                         onClick={() => addItemToCart(item)}
                         className="w-full text-left px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
                       >
-                        <p className="font-semibold">{item.name}</p>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold">{item.name}</p>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            {item.product_type}
+                          </span>
+                        </div>
                         <p className="text-xs text-slate-500">
                           {item.barcode || "No barcode"} - ₱
                           {Number(item.price).toFixed(2)}
@@ -1779,7 +1835,12 @@ export default function POSDashboard() {
                         className="bg-white rounded-lg p-3 border border-slate-100"
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <p className="font-medium text-sm">{item.name}</p>
+                          <div>
+                            <p className="font-medium text-sm">{item.name}</p>
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400">
+                              {item.product_type}
+                            </p>
+                          </div>
                           <p className="text-sm font-bold">
                             ₱{(Number(item.price) * item.quantity).toFixed(2)}
                           </p>

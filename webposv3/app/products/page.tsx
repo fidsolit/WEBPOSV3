@@ -11,6 +11,7 @@ interface ProductRow {
   id: string;
   name: string;
   barcode: string | null;
+  product_type: "product" | "service";
   price: number;
   cost: number;
   low_stock_threshold: number | null;
@@ -18,6 +19,7 @@ interface ProductRow {
 }
 
 interface ProductFormState {
+  productType: "product" | "service";
   name: string;
   barcode: string;
   price: string;
@@ -26,6 +28,7 @@ interface ProductFormState {
 }
 
 const EMPTY_PRODUCT_FORM: ProductFormState = {
+  productType: "product",
   name: "",
   barcode: "",
   price: "",
@@ -56,7 +59,7 @@ export default function ProductsPage() {
     let query = supabase
       .from("products")
       .select(
-        "id, name, barcode, price, cost, low_stock_threshold, updated_at",
+        "id, name, barcode, product_type, price, cost, low_stock_threshold, updated_at",
         { count: "exact" },
       )
       .order("updated_at", { ascending: false })
@@ -140,6 +143,7 @@ export default function ProductsPage() {
     setEditingProductId(product.id);
     setProductForm({
       name: product.name,
+      productType: product.product_type,
       barcode: product.barcode ?? "",
       price: Number(product.price).toString(),
       cost: Number(product.cost).toString(),
@@ -159,10 +163,10 @@ export default function ProductsPage() {
     const trimmedBarcode = productForm.barcode.trim();
     const parsedPrice = Number.parseFloat(productForm.price);
     const parsedCost = Number.parseFloat(productForm.cost);
-    const parsedLowStockThreshold = Number.parseInt(
-      productForm.lowStockThreshold,
-      10,
-    );
+    const parsedLowStockThreshold =
+      productForm.productType === "service"
+        ? 0
+        : Number.parseInt(productForm.lowStockThreshold, 10);
 
     if (!trimmedName) {
       alert("Product name is required.");
@@ -192,6 +196,7 @@ export default function ProductsPage() {
     const payload = {
       name: trimmedName,
       barcode: trimmedBarcode || null,
+      product_type: productForm.productType,
       price: parsedPrice,
       cost: parsedCost,
       low_stock_threshold: parsedLowStockThreshold,
@@ -235,7 +240,7 @@ export default function ProductsPage() {
           <div>
             <h1 className="text-3xl font-bold">Products</h1>
             <p className="mt-1 text-slate-500">
-              Manage your product master list, pricing, and barcode data.
+              Manage your products, services, pricing, and barcode data.
             </p>
           </div>
           <button
@@ -243,7 +248,7 @@ export default function ProductsPage() {
             className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white"
           >
             <Plus size={16} />
-            Add Product
+            Add Item
           </button>
         </header>
 
@@ -292,6 +297,7 @@ export default function ProductsPage() {
               <thead className="bg-slate-50/60 text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-6 py-4">Product</th>
+                  <th className="px-6 py-4">Type</th>
                   <th className="px-6 py-4">Barcode</th>
                   <th className="px-6 py-4">Price</th>
                   <th className="px-6 py-4">Cost</th>
@@ -304,7 +310,7 @@ export default function ProductsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-6 py-10 text-center text-slate-400"
                     >
                       <Loader2 className="mx-auto h-6 w-6 animate-spin text-blue-600" />
@@ -313,7 +319,7 @@ export default function ProductsPage() {
                 ) : rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-6 py-10 text-center text-slate-400"
                     >
                       No products found.
@@ -323,6 +329,11 @@ export default function ProductsPage() {
                   rows.map((product) => (
                     <tr key={product.id} className="hover:bg-slate-50/60">
                       <td className="px-6 py-4 font-semibold">{product.name}</td>
+                      <td className="px-6 py-4">
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase text-slate-600">
+                          {product.product_type}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 font-mono text-xs text-slate-500">
                         {product.barcode || "-"}
                       </td>
@@ -393,8 +404,29 @@ export default function ProductsPage() {
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4"
                 />
+                <select
+                  value={productForm.productType}
+                  onChange={(e) =>
+                    setProductForm((current) => ({
+                      ...current,
+                      productType: e.target.value as "product" | "service",
+                      lowStockThreshold:
+                        e.target.value === "service"
+                          ? "0"
+                          : current.lowStockThreshold || "10",
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                >
+                  <option value="product">Product</option>
+                  <option value="service">Service</option>
+                </select>
                 <input
-                  placeholder="Barcode"
+                  placeholder={
+                    productForm.productType === "service"
+                      ? "Barcode (optional)"
+                      : "Barcode"
+                  }
                   value={productForm.barcode}
                   onChange={(e) =>
                     setProductForm((current) => ({
@@ -444,7 +476,8 @@ export default function ProductsPage() {
                       lowStockThreshold: e.target.value,
                     }))
                   }
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  disabled={productForm.productType === "service"}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <button
                   onClick={handleSaveProduct}

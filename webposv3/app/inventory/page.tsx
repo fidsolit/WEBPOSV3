@@ -108,7 +108,8 @@ export default function Inventory() {
             name,
             price,
             cost,
-            barcode
+            barcode,
+            product_type
           )
         `,
         { count: "exact" },
@@ -134,7 +135,8 @@ export default function Inventory() {
   const loadProductOptions = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, barcode")
+      .select("id, name, barcode, product_type")
+      .eq("product_type", "product")
       .order("name", { ascending: true });
 
     if (error) {
@@ -158,7 +160,8 @@ export default function Inventory() {
             name,
             price,
             cost,
-            barcode
+            barcode,
+            product_type
           )
         `,
       )
@@ -498,6 +501,7 @@ export default function Inventory() {
           {
             name: newItem.name,
             barcode: newItem.barcode || null,
+            product_type: "product",
             price: parsedPrice,
             cost: parsedCost,
           },
