@@ -582,7 +582,12 @@ export default function POSDashboard() {
   };
 
   const ensureCustomerRecord = useCallback(
-    async (branchId: string, userId: string, fullName: string, contact: string) => {
+    async (
+      branchId: string,
+      userId: string,
+      fullName: string,
+      contact: string,
+    ) => {
       const trimmedName = fullName.trim();
       const trimmedContact = contact.trim();
 
@@ -701,7 +706,9 @@ export default function POSDashboard() {
 
     setSubmittingSale(true);
 
-    const stockedCartItems = cart.filter((item) => item.product_type === "product");
+    const stockedCartItems = cart.filter(
+      (item) => item.product_type === "product",
+    );
     const cartProductIds = stockedCartItems.map((item) => item.id);
     let inventoryMap = new Map<string, InventoryForSale>();
 
@@ -807,8 +814,7 @@ export default function POSDashboard() {
         sale_id: saleData.id,
         method: paymentMethod,
         amount: cartSubtotal,
-        amount_tendered:
-          paymentMethod === "cash" ? Number(cashAmount || 0) : 0,
+        amount_tendered: paymentMethod === "cash" ? Number(cashAmount || 0) : 0,
         change_amount: paymentMethod === "cash" ? Number(change || 0) : 0,
       },
     ]);
@@ -1345,7 +1351,7 @@ export default function POSDashboard() {
         <body>
           <div class="receipt">
             <div class="center">
-              <h2 style="margin:0;">WEBPOS</h2>
+              <h3 style="margin:0;">FCODES COMPUTER SUPPLY AND SERVICES</h3>
               <div class="muted">Transaction Receipt</div>
             </div>
             <div class="divider"></div>
@@ -1985,8 +1991,7 @@ export default function POSDashboard() {
                       cart.length === 0 ||
                       (paymentMethod === "cash" &&
                         Number(cashAmount) < cartSubtotal) ||
-                      (paymentMethod === "credit" &&
-                        !saleCustomerName.trim())
+                      (paymentMethod === "credit" && !saleCustomerName.trim())
                     }
                     onClick={handleAddNewSale}
                     className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
@@ -2276,7 +2281,9 @@ export default function POSDashboard() {
                               <div className="flex items-center justify-between">
                                 <span>Paid Amount</span>
                                 <span className="font-medium text-slate-700">
-                                  {pesoFormatter.format(Number(payment.amount ?? 0))}
+                                  {pesoFormatter.format(
+                                    Number(payment.amount ?? 0),
+                                  )}
                                 </span>
                               </div>
                               <div className="flex items-center justify-between">
@@ -2393,4 +2400,3 @@ function StatCard({
     </div>
   );
 }
-
