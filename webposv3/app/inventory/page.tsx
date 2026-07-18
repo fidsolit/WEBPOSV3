@@ -1096,7 +1096,7 @@ export default function Inventory() {
       </main>
 
       {isModalOpen && (
-        <ModalShell title="New Product" onClose={() => setIsModalOpen(false)}>
+        <ModalShell  title="New Product" onClose={() => setIsModalOpen(false)}>
           <form onSubmit={handleAddItem} className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-bold text-slate-500">
@@ -1126,7 +1126,7 @@ export default function Inventory() {
                 className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+           
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-500">
                   Unit Cost (PHP)
@@ -1185,7 +1185,7 @@ export default function Inventory() {
                   className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
-            </div>
+         
             <button
               disabled={loading}
               type="submit"
