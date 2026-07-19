@@ -1318,7 +1318,7 @@ export default function POSDashboard() {
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${item.productName}</td>
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${item.quantity}</td>
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${pesoFormatter.format(item.price)}</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${pesoFormatter.format(item.line_subtotal)}</td>
+            
           </tr>
         `,
       )
@@ -1329,76 +1329,119 @@ export default function POSDashboard() {
       alert("Unable to open print preview.");
       return;
     }
+//this is the code that generates the HTML for the print preview of the sale details. It creates a new window and writes the HTML content into it, including styles and the sale information. The receipt includes the transaction details, items sold, payments made, and totals. After writing the content, it closes the document, focuses on the new window, and triggers the print dialog.
+// 1. Write the initial document structure with a unique ID container
+printWindow.document.write(`
+  <html>
+    <head>
+      <title>Transaction ${sale.receipt_no || sale.id}</title>
+      <style id="dynamic-page-size">
+        /* Fallback size before measurement completes */
+        @page { size: 58mm auto; margin: 0mm; }
+      </style>
+      <style>
+        html, body { 
+          font-family: "Courier New", monospace; 
+          color: #000000; 
+          margin: 0; 
+          padding: 0; 
+          background: #ffffff; 
+          -webkit-print-color-adjust: exact;
+        }
+        
+        /* Rigidly lock width down to Xprinter 58mm printable area */
+        .receipt { 
+          width: 48mm; 
+          margin: 0; 
+          padding: 2mm 1mm;
+          box-sizing: border-box;
+          display: inline-block; /* Essential: wraps height exactly to child boundaries */
+        }
+        
+        .center { text-align: center; }
+        .muted { color: #000000; font-size: 11px; }
+        .divider { border-top: 1px dashed #000000; margin: 8px 0; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { padding: 3px 0; vertical-align: top; }
+        th { text-align: left; font-weight: bold; }
+        .right { text-align: right; }
+        
+        .summary-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 11px; gap: 4px; }
+        .total { font-weight: 700; font-size: 13px; }
+      </style>
+    </head>
+    <body>
+      <div id="receipt-container" class="receipt">
+        <div class="center">
+          <h4 style="margin:0; font-size: 13px;">FCODES COMPUTER SUPPLY AND SERVICES</h4>
+          <div class="muted">Transaction Receipt</div>
+        </div>
+        <div class="divider"></div>
+        <div class="summary-row"><span>Receipt</span><span>${sale.receipt_no || "-"}</span></div>
+        <div class="summary-row"><span>Sale ID</span><span>${sale.id.slice(0, 8)}</span></div>
+        <div class="summary-row"><span>Date</span><span>${new Date(sale.created_at).toLocaleString([], {hour: '2-digit', minute:'2-digit', year: 'numeric', month: 'numeric', day: 'numeric'})}</span></div>
+        <div class="summary-row"><span>Cashier</span><span>${cashierName}</span></div>
+        <div class="summary-row"><span>Status</span><span>${sale.status.toUpperCase()}</span></div>
+        ${
+          sale.status === "void"
+            ? `
+        <div class="summary-row"><span>Voided At</span><span>${sale.voided_at ? new Date(sale.voided_at).toLocaleString([], {hour: '2-digit', minute:'2-digit'}) : "-"}</span></div>
+        <div class="summary-row"><span>Voided By</span><span>${voidedByName}</span></div>
+        `
+            : ""
+        }
+        <div class="divider"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th class="right" style="width: 24px;">Qty</th>
+              <th class="right" style="width: 55px;">Amt</th>
+            </tr>
+          </thead>
+           <tbody>${itemRows}</tbody>
+        </table>
+        <div class="divider"></div>
+        <div class="summary-row"><span>Payments</span><span></span></div>
+        <div class="muted" style="margin-bottom: 4px;">${paymentSummary}</div>
+        <div class="divider"></div>
+        <div class="summary-row"><span>Subtotal</span><span>${pesoFormatter.format(Number(sale.subtotal ?? sale.total))}</span></div>
+        <div class="summary-row"><span>Discount</span><span>${pesoFormatter.format(Number(sale.discount_amount ?? 0))}</span></div>
+        <div class="summary-row"><span>Tax</span><span>${pesoFormatter.format(Number(sale.tax ?? 0))}</span></div>
+        <div class="summary-row total"><span>Total</span><span>${pesoFormatter.format(Number(sale.total ?? 0))}</span></div>
+        ${
+          sale.notes
+            ? `<div class="divider"></div><div class="muted">Note: ${sale.notes}</div>`
+            : ""
+        }
+      </div>
+    </body>
+  </html>
+`);
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Transaction ${sale.receipt_no || sale.id}</title>
-          <style>
-            body { font-family: "Courier New", monospace; color: #111827; margin: 0; padding: 24px; background: #f8fafc; }
-            .receipt { width: 360px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; padding: 20px; }
-            .center { text-align: center; }
-            .muted { color: #64748b; font-size: 12px; }
-            .divider { border-top: 1px dashed #94a3b8; margin: 12px 0; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { padding: 4px 0; vertical-align: top; }
-            th { text-align: left; }
-            .right { text-align: right; }
-            .summary-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 12px; gap: 12px; }
-            .total { font-weight: 700; font-size: 14px; }
-          </style>
-        </head>
-        <body>
-          <div class="receipt">
-            <div class="center">
-              <h3 style="margin:0;">FCODES COMPUTER SUPPLY AND SERVICES</h3>
-              <div class="muted">Transaction Receipt</div>
-            </div>
-            <div class="divider"></div>
-            <div class="summary-row"><span>Receipt</span><span>${sale.receipt_no || "-"}</span></div>
-            <div class="summary-row"><span>Sale ID</span><span>${sale.id.slice(0, 8)}</span></div>
-            <div class="summary-row"><span>Date</span><span>${new Date(sale.created_at).toLocaleString()}</span></div>
-            <div class="summary-row"><span>Cashier</span><span>${cashierName}</span></div>
-            <div class="summary-row"><span>Status</span><span>${sale.status.toUpperCase()}</span></div>
-            ${
-              sale.status === "void"
-                ? `
-            <div class="summary-row"><span>Voided At</span><span>${sale.voided_at ? new Date(sale.voided_at).toLocaleString() : "-"}</span></div>
-            <div class="summary-row"><span>Voided By</span><span>${voidedByName}</span></div>
-            `
-                : ""
-            }
-            <div class="divider"></div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th class="right">Qty</th>
-                  <th class="right">Amt</th>
-                </tr>
-              </thead>
-              <tbody>${itemRows}</tbody>
-            </table>
-            <div class="divider"></div>
-            <div class="summary-row"><span>Payments</span><span></span></div>
-            <div class="muted">${paymentSummary}</div>
-            <div class="divider"></div>
-            <div class="summary-row"><span>Subtotal</span><span>${pesoFormatter.format(Number(sale.subtotal ?? sale.total))}</span></div>
-            <div class="summary-row"><span>Discount</span><span>${pesoFormatter.format(Number(sale.discount_amount ?? 0))}</span></div>
-            <div class="summary-row"><span>Tax</span><span>${pesoFormatter.format(Number(sale.tax ?? 0))}</span></div>
-            <div class="summary-row total"><span>Total</span><span>${pesoFormatter.format(Number(sale.total ?? 0))}</span></div>
-            ${
-              sale.notes
-                ? `<div class="divider"></div><div class="muted">Note: ${sale.notes}</div>`
-                : ""
-            }
-          </div>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+printWindow.document.close();
+printWindow.focus();
+
+// 2. Measure content pixel height and calculate required sheet size
+const container = printWindow.document.getElementById('receipt-container');
+const styleTag = printWindow.document.getElementById('dynamic-page-size');
+
+if (container && styleTag) {
+  // Capture precise height including padding boundaries
+  const pixelHeight = container.offsetHeight; 
+  
+  // Standard display printing translates 96 pixels to 1 inch (25.4 millimeters)
+  // Adding an explicit 4mm safety margin prevents early cutoffs or rounding hiccups
+  const mmHeight = Math.ceil((pixelHeight * 25.4) / 96) + 4; 
+  
+  // 3. Re-inject the explicit dynamic dimensions right before triggering print
+  styleTag.innerHTML = `@page { size: 58mm \${mmHeight}mm; margin: 0mm; }`;
+}
+
+// 4. Fire print pipeline
+printWindow.print();
+
   };
 
   if (checkingAuth) {
