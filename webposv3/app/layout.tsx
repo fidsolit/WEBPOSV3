@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { NextScript } from "next/document";
 import "./globals.css";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { SessionTimeoutManager } from "@/app/components/session-timeout-manager";
@@ -54,7 +55,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* <NextScript dangerouslySetInnerHTML={{ __html: themeBootScript }} /> */}
       </head>
       <body className="min-h-full flex flex-col">
         <SessionTimeoutManager />
