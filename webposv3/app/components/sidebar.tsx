@@ -29,6 +29,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<"admin" | "cashier" | "user" | null>(null);
+  const [full_name, setfull_name] = useState<string>("");
   const isAdminRoute =
     pathname === "/admin" ||
     pathname.startsWith("/products") ||
@@ -46,7 +47,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
       if (!user) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, full_name")
         .eq("id", user.id)
         .single();
       if (
@@ -56,6 +57,9 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
       ) {
         setRole(profile.role);
       }
+      if (profile?.full_name) {
+  setfull_name(profile.full_name);
+}
     };
     loadRole();
   }, []);
@@ -286,24 +290,44 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
       </nav>
 
       {/* Bottom Nav */}
-      <div className="pt-6 border-t border-slate-100 space-y-2">
-        <ThemeToggle />
-        {effectiveRole === "admin" && (
-          <SidebarItem
-            href="/settings"
-            icon={<Settings size={20} />}
-            label="Settings"
-            active={pathname === "/settings"}
-          />
-        )}
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 p-3 w-full rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-medium"
-        >
-          <LogOut size={20} />
-          <span className="text-[15px]">Logout</span>
-        </button>
-      </div>
+ <div className="pt-6 border-t border-slate-100 space-y-2">
+  <ThemeToggle />
+
+  {effectiveRole === "admin" && (
+    <SidebarItem
+      href="/settings"
+      icon={<Settings size={20} />}
+      label="Settings"
+      active={pathname === "/settings"}
+    />
+  )}
+
+  {/* User Information */}
+  <div className="flex items-center gap-3 p-3 mt-4">
+    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
+      {full_name ? full_name.charAt(0).toUpperCase() : "U"}
+    </div>
+
+    <div className="flex-1 overflow-hidden">
+      <p className="text-sm font-semibold text-slate-800 truncate">
+        {full_name || "User"}
+      </p>
+
+      <p className="text-xs text-slate-500 capitalize">
+        {role || "User"}
+      </p>
+    </div>
+  </div>
+
+  {/* Logout */}
+  <button
+    onClick={handleLogout}
+    className="flex items-center gap-3 p-3 w-full rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-medium"
+  >
+    <LogOut size={20} />
+    <span className="text-[15px]">Logout</span>
+  </button>
+</div>
     </aside>
   );
 }
