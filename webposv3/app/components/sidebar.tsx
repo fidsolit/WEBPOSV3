@@ -83,6 +83,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   return (
     <aside className="hidden md:flex w-72 bg-white border-r border-slate-200 p-6 flex-col h-screen sticky top-0">
       {/* Dynamic Brand SVG Logo Branding Header */}
+      <Link href={effectiveRole === "admin" ? "/admin" : "/pos"}>
       <div className="app-sidebar-logo px-2 mb-10 flex items-center justify-start">
         <svg
           viewBox="0 0 540 150"
@@ -230,6 +231,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           />
         </svg>
       </div>
+      </Link>
 
       {/* Main Nav */}
       <nav className="space-y-1 flex-1">

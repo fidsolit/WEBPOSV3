@@ -4,6 +4,7 @@ import { NextScript } from "next/document";
 import "./globals.css";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { SessionTimeoutManager } from "@/app/components/session-timeout-manager";
+import {Toaster} from "react-hot-toast"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -59,6 +60,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <SessionTimeoutManager />
+        <Toaster position="top-right" />
         {children}
       </body>
     </html>

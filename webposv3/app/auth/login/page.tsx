@@ -9,8 +9,11 @@ import { getAuthRedirectURL } from "@/lib/authRedirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Moon, Sun, Loader2 } from "lucide-react";
+import {toast} from "react-hot-toast"
 
 export default function Login() {
+    const notifySuccess = () => toast.success('Successfully Logged In!');
+  const notifyError = () => toast.error('Something went wrong.');
   const isMounted = useSyncExternalStore(
     () => () => undefined,
     () => true,
@@ -118,6 +121,7 @@ export default function Login() {
 
     await logUserActivity("login");
     router.push(profile?.role === "admin" ? "/admin" : "/pos");
+return notifySuccess(); // Show success toast notification
   };
 
   const handleGoogleLogin = async () => {
