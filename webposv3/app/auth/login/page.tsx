@@ -1,7 +1,7 @@
 "use client";
 import { KeyboardEvent } from "react";
 
-import { useState, useEffect, useSyncExternalStore } from "react"; // Added useEffect
+import { useState, useEffect, useSyncExternalStore, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { logUserActivity } from "@/lib/activityLogger";
 import { applyTheme, resolvePreferredTheme } from "@/lib/theme";
@@ -9,16 +9,17 @@ import { getAuthRedirectURL } from "@/lib/authRedirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Moon, Sun, Loader2 } from "lucide-react";
-import {toast} from "react-hot-toast"
+import { toast } from "react-hot-toast";
 
-export default function Login() {
-    const notifySuccess = () => toast.success('Successfully Logged In!');
-  const notifyError = () => toast.error('Something went wrong.');
+function LoginContent() {
+  const notifySuccess = () => toast.success("Successfully Logged In!");
+  const notifyError = () => toast.error("Something went wrong.");
   const isMounted = useSyncExternalStore(
     () => () => undefined,
     () => true,
     () => false,
   );
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -121,7 +122,7 @@ export default function Login() {
 
     await logUserActivity("login");
     router.push(profile?.role === "admin" ? "/admin" : "/pos");
-return notifySuccess(); // Show success toast notification
+    return notifySuccess(); // Show success toast notification
   };
 
   const handleGoogleLogin = async () => {
@@ -192,7 +193,9 @@ return notifySuccess(); // Show success toast notification
             <svg
               viewBox="0 0 540 150"
               className={`h-16 w-auto ${
-                isMounted && theme === "dark" ? "text-slate-100" : "text-slate-900"
+                isMounted && theme === "dark"
+                  ? "text-slate-100"
+                  : "text-slate-900"
               }`}
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -345,7 +348,9 @@ return notifySuccess(); // Show success toast notification
 
           <p
             className={`text-sm mt-1 ${
-              isMounted && theme === "dark" ? "text-slate-400" : "text-slate-500"
+              isMounted && theme === "dark"
+                ? "text-slate-400"
+                : "text-slate-500"
             }`}
           >
             Secure sign-in to your dashboard
@@ -366,7 +371,9 @@ return notifySuccess(); // Show success toast notification
         <div className="mb-4">
           <label
             className={`text-sm font-medium ${
-              isMounted && theme === "dark" ? "text-slate-300" : "text-slate-600"
+              isMounted && theme === "dark"
+                ? "text-slate-300"
+                : "text-slate-600"
             }`}
           >
             Email
@@ -388,7 +395,9 @@ return notifySuccess(); // Show success toast notification
         <div className="mb-6">
           <label
             className={`text-sm font-medium ${
-              isMounted && theme === "dark" ? "text-slate-300" : "text-slate-600"
+              isMounted && theme === "dark"
+                ? "text-slate-300"
+                : "text-slate-600"
             }`}
           >
             Password
@@ -423,7 +432,9 @@ return notifySuccess(); // Show success toast notification
           />
           <span
             className={`text-xs font-semibold uppercase tracking-[0.2em] ${
-              isMounted && theme === "dark" ? "text-slate-500" : "text-slate-400"
+              isMounted && theme === "dark"
+                ? "text-slate-500"
+                : "text-slate-400"
             }`}
           >
             Or
@@ -447,7 +458,9 @@ return notifySuccess(); // Show success toast notification
         >
           <span className="flex items-center justify-center gap-3">
             <GoogleIcon />
-            {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+            {googleLoading
+              ? "Redirecting to Google..."
+              : "Continue with Google"}
           </span>
         </button>
 
@@ -488,14 +501,18 @@ return notifySuccess(); // Show success toast notification
             >
               <h2
                 className={`text-lg font-bold ${
-                  isMounted && theme === "dark" ? "text-slate-100" : "text-slate-900"
+                  isMounted && theme === "dark"
+                    ? "text-slate-100"
+                    : "text-slate-900"
                 }`}
               >
                 Approval Required
               </h2>
               <p
                 className={`text-sm mt-1 ${
-                  isMounted && theme === "dark" ? "text-slate-400" : "text-slate-500"
+                  isMounted && theme === "dark"
+                    ? "text-slate-400"
+                    : "text-slate-500"
                 }`}
               >
                 Cashier account verification
@@ -504,7 +521,9 @@ return notifySuccess(); // Show success toast notification
             <div className="px-6 py-5">
               <p
                 className={`text-sm leading-relaxed ${
-                  isMounted && theme === "dark" ? "text-slate-200" : "text-slate-700"
+                  isMounted && theme === "dark"
+                    ? "text-slate-200"
+                    : "text-slate-700"
                 }`}
               >
                 {approvalMessage}
@@ -549,5 +568,18 @@ function GoogleIcon() {
         fill="#EB4335"
       />
     </svg>
+  );
+}
+export default function Login() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-100">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-600" />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

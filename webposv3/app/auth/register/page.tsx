@@ -12,9 +12,10 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
-
+import { toast } from "react-hot-toast";
 export default function RegisterPage() {
   const router = useRouter();
+  const notifyError = (msg: string) => toast.error(msg);
 
   // Form State
   const [fullName, setFullName] = useState("");
@@ -29,7 +30,7 @@ export default function RegisterPage() {
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
@@ -60,6 +61,7 @@ export default function RegisterPage() {
         // Direct catch for already registered error
         if (signUpError.message.includes("already registered")) {
           setError("This email is already in use. Try logging in!");
+          notifyError("This email is already in use. Try logging in!");
         } else {
           setError(signUpError.message);
         }
@@ -69,6 +71,8 @@ export default function RegisterPage() {
       // Check if user exists but session is null (Supabase security behavior)
       if (data?.user && data.user.identities?.length === 0) {
         setError("This email is already registered. Please login.");
+        notifyError("This email is already in use. Try logging in!");
+
         return;
       }
 
@@ -238,7 +242,9 @@ export default function RegisterPage() {
         >
           <span className="flex items-center justify-center gap-3">
             <GoogleIcon />
-            {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+            {googleLoading
+              ? "Redirecting to Google..."
+              : "Continue with Google"}
           </span>
         </button>
 
