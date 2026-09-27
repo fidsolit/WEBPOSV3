@@ -1,6 +1,13 @@
+
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArrowLeft, Loader2, Plus, Store } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../components/sidebar";
@@ -60,13 +67,19 @@ export default function Inventory() {
   const [inventoryTotalCount, setInventoryTotalCount] = useState(0);
   const [lowStockItems, setLowStockItems] = useState<InventoryItem[]>([]);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
-  const [recentDeliveries, setRecentDeliveries] = useState<RecentDeliveryItem[]>([]);
-  const [inventoryHistory, setInventoryHistory] = useState<RecentInventoryHistoryItem[]>([]);
+  const [recentDeliveries, setRecentDeliveries] = useState<
+    RecentDeliveryItem[]
+  >([]);
+  const [inventoryHistory, setInventoryHistory] = useState<
+    RecentInventoryHistoryItem[]
+  >([]);
   const [recentLosses, setRecentLosses] = useState<RecentLossItem[]>([]);
   const [selectedLowStockItem, setSelectedLowStockItem] =
     useState<InventoryItem | null>(null);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
-  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(
+    null,
+  );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
@@ -82,20 +95,20 @@ export default function Inventory() {
 
   const [newItem, setNewItem] = useState(DEFAULT_NEW_ITEM_FORM);
   const [variantForm, setVariantForm] = useState(DEFAULT_VARIANT_FORM);
-  const [deliveryForm, setDeliveryForm] =
-    useState<DeliveryFormState>(DEFAULT_DELIVERY_FORM);
+  const [deliveryForm, setDeliveryForm] = useState<DeliveryFormState>(
+    DEFAULT_DELIVERY_FORM,
+  );
   const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState("");
   const inventoryPageSize = 10;
   const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchInventory = useCallback(
-    async (branchId: string, page = 1) => {
-      const from = (page - 1) * inventoryPageSize;
-      const to = from + inventoryPageSize - 1;
+  const fetchInventory = useCallback(async (branchId: string, page = 1) => {
+    const from = (page - 1) * inventoryPageSize;
+    const to = from + inventoryPageSize - 1;
 
-      const { data, error, count } = await supabase
+    const { data, error, count } = await supabase
       .from("inventory")
       .select(
         `
@@ -118,19 +131,17 @@ export default function Inventory() {
       .order("updated_at", { ascending: false })
       .range(from, to);
 
-      if (error) {
-        console.error("Supabase Error:", error.message);
-        return;
-      }
+    if (error) {
+      console.error("Supabase Error:", error.message);
+      return;
+    }
 
-      setInventoryPage(page);
-      if (count !== null) {
-        setInventoryTotalCount(count);
-      }
-      setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
-    },
-    [],
-  );
+    setInventoryPage(page);
+    if (count !== null) {
+      setInventoryTotalCount(count);
+    }
+    setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
+  }, []);
 
   const loadProductOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -173,7 +184,9 @@ export default function Inventory() {
       return;
     }
 
-    const normalizedItems = normalizeInventoryRows((data as InventoryRow[]) ?? []);
+    const normalizedItems = normalizeInventoryRows(
+      (data as InventoryRow[]) ?? [],
+    );
     setLowStockItems(
       normalizedItems.filter((item) => item.stock <= (item.min_stock ?? 0)),
     );
@@ -182,7 +195,9 @@ export default function Inventory() {
   const loadRecentDeliveries = useCallback(async (branchId: string) => {
     const { data, error } = await supabase
       .from("stock_movements")
-      .select("id, quantity, unit_cost, note, created_at, product_id, created_by")
+      .select(
+        "id, quantity, unit_cost, note, created_at, product_id, created_by",
+      )
       .eq("branch_id", branchId)
       .eq("movement_type", "restock")
       .order("created_at", { ascending: false })
@@ -239,7 +254,9 @@ export default function Inventory() {
       );
     }
 
-    setRecentDeliveries(buildRecentDeliveryItems(rows, productNameMap, encodedByMap));
+    setRecentDeliveries(
+      buildRecentDeliveryItems(rows, productNameMap, encodedByMap),
+    );
   }, []);
 
   const loadInventoryHistory = useCallback(async (branchId: string) => {
@@ -871,14 +888,19 @@ export default function Inventory() {
     1,
     Math.ceil(inventoryTotalCount / inventoryPageSize),
   );
-  const visibleLowStockItems = useMemo(() => lowStockItems.slice(0, 8), [lowStockItems]);
+  const visibleLowStockItems = useMemo(
+    () => lowStockItems.slice(0, 8),
+    [lowStockItems],
+  );
   const displayedInventoryItems = showLowStockOnly ? lowStockItems : items;
   const filteredDeliveryProducts = useMemo(() => {
     const query = deliverySearch.trim().toLowerCase();
     if (!query) return productOptions;
     return productOptions.filter((product) => {
       const nameMatch = product.name.toLowerCase().includes(query);
-      const barcodeMatch = (product.barcode ?? "").toLowerCase().includes(query);
+      const barcodeMatch = (product.barcode ?? "")
+        .toLowerCase()
+        .includes(query);
       return nameMatch || barcodeMatch;
     });
   }, [deliverySearch, productOptions]);
@@ -1096,7 +1118,7 @@ export default function Inventory() {
       </main>
 
       {isModalOpen && (
-        <ModalShell  title="New Product" onClose={() => setIsModalOpen(false)}>
+        <ModalShell title="New Product" onClose={() => setIsModalOpen(false)}>
           <form onSubmit={handleAddItem} className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-bold text-slate-500">
@@ -1126,66 +1148,66 @@ export default function Inventory() {
                 className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
-           
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-500">
-                  Unit Cost (PHP)
-                </label>
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  value={newItem.cost}
-                  onChange={(event) =>
-                    setNewItem({ ...newItem, cost: event.target.value })
-                  }
-                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-500">
-                  Price (PHP)
-                </label>
-                <input
-                  required
-                  type="number"
-                  step="0.01"
-                  value={newItem.price}
-                  onChange={(event) =>
-                    setNewItem({ ...newItem, price: event.target.value })
-                  }
-                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-500">
-                  Stock
-                </label>
-                <input
-                  required
-                  type="number"
-                  value={newItem.stock}
-                  onChange={(event) =>
-                    setNewItem({ ...newItem, stock: event.target.value })
-                  }
-                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-500">
-                  Low Stock Alert
-                </label>
-                <input
-                  required
-                  type="number"
-                  value={newItem.minStock}
-                  onChange={(event) =>
-                    setNewItem({ ...newItem, minStock: event.target.value })
-                  }
-                  className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </div>
-         
+
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Unit Cost (PHP)
+              </label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={newItem.cost}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, cost: event.target.value })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Price (PHP)
+              </label>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={newItem.price}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, price: event.target.value })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Stock
+              </label>
+              <input
+                required
+                type="number"
+                value={newItem.stock}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, stock: event.target.value })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-500">
+                Low Stock Alert
+              </label>
+              <input
+                required
+                type="number"
+                value={newItem.minStock}
+                onChange={(event) =>
+                  setNewItem({ ...newItem, minStock: event.target.value })
+                }
+                className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
             <button
               disabled={loading}
               type="submit"
@@ -1303,7 +1325,9 @@ export default function Inventory() {
             <input
               placeholder="Scan or type barcode"
               value={deliveryBarcodeInput}
-              onChange={(event) => handleDeliveryBarcodeChange(event.target.value)}
+              onChange={(event) =>
+                handleDeliveryBarcodeChange(event.target.value)
+              }
               className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4"
             />
             <select
@@ -1518,7 +1542,7 @@ export default function Inventory() {
           </div>
         </ModalShell>
       )}
-
     </div>
   );
 }
+
