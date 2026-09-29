@@ -71,6 +71,7 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
   // Close drawer on route change
   useEffect(() => {
     setMobileOpen(false);
+    setProfileOpen(false);
   }, [pathname]);
 
   // Close drawer on outside click
@@ -237,28 +238,34 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
           />
         )}
 
-        {/* Profile card — hover to reveal logout */}
+        {/* Profile card — hover (desktop) or tap (mobile) to reveal logout */}
         <div className="group relative mt-2">
-          {/* Logout button — hidden by default, slides up on group hover */}
+          {/* Logout button — hidden by default, slides up on group hover or profileOpen */}
           <button
             onClick={handleLogout}
-            className="
+            className={`
               absolute bottom-full left-0 right-0 mb-1
               flex items-center gap-3 p-3 rounded-xl
               text-rose-500 bg-white border border-rose-100
               font-medium shadow-sm
-              opacity-0 -translate-y-1 pointer-events-none
-              group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto
               transition-all duration-200 ease-out
-            "
+              ${profileOpen
+                ? "opacity-100 translate-y-0 pointer-events-auto"
+                : "opacity-0 -translate-y-1 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto"
+              }
+            `}
           >
             <LogOut size={18} />
             <span className="text-[15px]">Logout</span>
           </button>
 
-          {/* Profile row — acts as the hover target */}
-          <div className="flex items-center gap-3 p-3 rounded-xl cursor-default hover:bg-slate-50 transition-colors">
-            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold shrink-0 ring-2 ring-transparent group-hover:ring-blue-200 transition-all">
+          {/* Profile row — hover target + tap toggle for mobile */}
+          <button
+            type="button"
+            onClick={() => setProfileOpen((o) => !o)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition-colors text-left"
+          >
+            <div className={`w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold shrink-0 ring-2 transition-all ${profileOpen ? "ring-blue-200" : "ring-transparent group-hover:ring-blue-200"}`}>
               {fullName ? fullName.charAt(0).toUpperCase() : "U"}
             </div>
             <div className="flex-1 min-w-0">
@@ -267,12 +274,12 @@ export default function Sidebar({ onNewSaleClick }: SidebarProps) {
               </p>
               <p className="text-xs text-slate-500 capitalize">{role || "User"}</p>
             </div>
-            {/* Subtle logout hint icon — visible on hover */}
+            {/* Subtle logout hint icon */}
             <LogOut
               size={15}
-              className="shrink-0 text-slate-300 group-hover:text-rose-400 transition-colors"
+              className={`shrink-0 transition-colors ${profileOpen ? "text-rose-400" : "text-slate-300 group-hover:text-rose-400"}`}
             />
-          </div>
+          </button>
         </div>
       </div>
     </>
