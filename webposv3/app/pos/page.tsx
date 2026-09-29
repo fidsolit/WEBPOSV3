@@ -1670,30 +1670,32 @@ printWindow.print();
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
       <Sidebar onNewSaleClick={openNewSaleModal} />
 
-      <main className="flex-1 overflow-y-auto p-6 pb-16 md:p-10 md:pb-16">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+      <main className="flex-1 overflow-y-auto p-4 pt-20 pb-20 md:pt-10 md:p-10 md:pb-20">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
           <div>
-            <h2 className="text-3xl font-bold">Dashboard Overview</h2>
-            <p className="text-slate-500 mt-1">Real-time performance metrics</p>
+            <h2 className="text-2xl sm:text-3xl font-bold">Dashboard Overview</h2>
+            <p className="text-slate-500 mt-1 text-sm">Real-time performance metrics</p>
           </div>
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button
             onClick={openNewSaleModal}
-            className="w-full md:w-auto px-6 py-3 rounded-2xl font-bold bg-blue-600 text-white shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2"
+            className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl font-bold bg-blue-600 text-white shadow-xl hover:scale-105 transition-all flex items-center justify-center gap-2 text-sm"
           >
-            <Plus size={20} /> New Sale
+            <Plus size={18} /> New Sale
           </button>
           {creditFeatureReady && (
             <button
               onClick={() => setIsCreditModalOpen(true)}
-              className="w-full md:w-auto px-6 py-3 rounded-2xl font-bold bg-amber-500 text-white shadow-xl hover:scale-105 transition-all"
+              className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl font-bold bg-amber-500 text-white shadow-xl hover:scale-105 transition-all text-sm"
             >
-              Add Customer Credit
+              Add Credit
             </button>
           )}
+          </div>
         </header>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8">
           <StatCard
             label="Total Revenue"
             value={`₱${revenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`}
@@ -1719,9 +1721,9 @@ printWindow.print();
 
         {/* Recent Transactions Table */}
         <div ref={transactionsTableRef} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-50">
-            <h3 className="text-lg font-bold">Recent Transactions</h3>
-            <p className="text-sm text-slate-500 mt-1">
+          <div className="p-5 sm:p-8 border-b border-slate-50">
+            <h3 className="text-base sm:text-lg font-bold">Recent Transactions</h3>
+            <p className="text-sm text-slate-500 mt-1 hidden sm:block">
               Latest sales recorded in your POS, including unit cost per
               transaction.
             </p>
@@ -2013,8 +2015,8 @@ printWindow.print();
 
       {/* --- NEW SALE MODAL --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-5xl shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 w-full sm:max-w-5xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in duration-200 max-h-[95vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">New Sale</h2>
               <button
@@ -2028,7 +2030,7 @@ printWindow.print();
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
               <div className="space-y-3">
                 <div className="relative">
                   <Search
@@ -2270,8 +2272,8 @@ printWindow.print();
       )}
 
       {isCreditModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 w-full sm:max-w-md shadow-2xl animate-in fade-in slide-in-from-bottom-4 sm:zoom-in duration-200 max-h-[95vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Add Customer Credit</h2>
               <button
@@ -2333,8 +2335,8 @@ printWindow.print();
       )}
 
       {(detailsLoading || selectedSaleDetail) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-4xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 backdrop-blur-sm">
+          <div className="w-full sm:max-w-4xl rounded-t-3xl sm:rounded-3xl bg-white p-4 sm:p-6 shadow-2xl max-h-[95vh] overflow-y-auto">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Transaction Details</h2>
@@ -2636,7 +2638,7 @@ printWindow.print();
         </div>
       )}
       {/* ── Shortcut Bar ──────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-slate-200 bg-white text-[11px] font-semibold shadow-lg select-none print:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-40 hidden sm:flex items-stretch border-t border-slate-200 bg-white text-[10px] font-semibold shadow-lg select-none print:hidden overflow-x-auto">
         {[
           { key: "Enter", label: "Execute" },
           { key: "F1",  label: "New Sale" },
