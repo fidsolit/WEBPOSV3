@@ -2215,7 +2215,7 @@ printWindow.print();
                     ref={itemSearchRef}
                     value={itemSearch}
                     onChange={(e) => setItemSearch(e.target.value)}
-                    placeholder="Search item name or barcode"
+                    placeholder="Search item only"
                     className="w-full p-3 pl-9 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
