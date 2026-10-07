@@ -101,7 +101,8 @@ export default function Inventory() {
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
-  const inventorySearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inventorySearchDebounceRef = useRef<number | null>(null);
+  // const inventorySearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inventoryPageSize = 10;
   const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
@@ -1059,14 +1060,20 @@ export default function Inventory() {
                   <input
                     type="text"
                     value={inventorySearch}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setInventorySearch(val);
-                      if (inventorySearchDebounceRef.current) clearTimeout(inventorySearchDebounceRef.current);
-                      inventorySearchDebounceRef.current = window.setTimeout(() => {
-                        if (activeBranchId) void fetchInventory(activeBranchId, 1, val);
-                      }, 300);
-                    }}
+                   onChange={(e) => {
+  const val = e.target.value;
+  setInventorySearch(val);
+
+  if (inventorySearchDebounceRef.current !== null) {
+    window.clearTimeout(inventorySearchDebounceRef.current);
+  }
+
+  inventorySearchDebounceRef.current = window.setTimeout(() => {
+    if (activeBranchId) {
+      void fetchInventory(activeBranchId, 1, val);
+    }
+  }, 300);
+}}
                     placeholder="Search name or barcode…"
                     className="w-full sm:w-60 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                   />
