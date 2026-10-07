@@ -101,8 +101,7 @@ export default function Inventory() {
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState("");
   const [inventorySearch, setInventorySearch] = useState("");
-  const inventorySearchDebounceRef = useRef<number | null>(null);
-  // const inventorySearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inventorySearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inventoryPageSize = 10;
   const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
@@ -692,8 +691,6 @@ export default function Inventory() {
       .eq("branch_id", activeBranchId)
       .eq("product_id", deliveryForm.productId)
       .single();
-    // Note: Using maybeSingle() to handle cases where the inventory record might not exist yet.
-    //debugger;
 
     if (inventoryError || !inventoryRecord) {
       alert(inventoryError?.message || "Inventory item not found.");
@@ -1053,7 +1050,6 @@ export default function Inventory() {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-              {/* Search input */}
               {!showLowStockOnly && (
                 <div className="relative">
                   <svg
@@ -1072,32 +1068,15 @@ export default function Inventory() {
                   <input
                     type="text"
                     value={inventorySearch}
-                    // onChange={(e) => {
-                    //   const val = e.target.value;
-                    //   setInventorySearch(val);
-
-                    //   if (inventorySearchDebounceRef.current !== null) {
-                    //     window.clearTimeout(inventorySearchDebounceRef.current);
-                    //   }
-
-                    //   inventorySearchDebounceRef.current = window.setTimeout(
-                    //     () => {
-                    //       if (activeBranchId) {
-                    //         void fetchInventory(activeBranchId, 1, val);
-                    //       }
-                    //     },
-                    //     300,
-                    //   );
-                    // }}
                     onChange={(e) => {
                       const val = e.target.value;
                       setInventorySearch(val);
 
                       if (inventorySearchDebounceRef.current !== null) {
-                        window.clearTimeout(inventorySearchDebounceRef.current);
+                        clearTimeout(inventorySearchDebounceRef.current);
                       }
 
-                      inventorySearchDebounceRef.current = window.setTimeout(
+                      inventorySearchDebounceRef.current = setTimeout(
                         () => {
                           if (activeBranchId) {
                             void fetchInventory(activeBranchId, 1, val);
