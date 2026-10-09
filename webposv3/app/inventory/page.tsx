@@ -100,26 +100,22 @@ export default function Inventory() {
   const [lossForm, setLossForm] = useState(DEFAULT_LOSS_FORM);
   const [deliverySearch, setDeliverySearch] = useState("");
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState("");
-  const [inventorySearch, setInventorySearch] = useState("");
-  const inventorySearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inventoryPageSize = 10;
   const inventoryTableRef = useRef<HTMLDivElement | null>(null);
 
-  const fetchInventory = useCallback(
-    async (branchId: string, page = 1, search = "") => {
-      const from = (page - 1) * inventoryPageSize;
-      const to = from + inventoryPageSize - 1;
-      const trimmed = search.trim();
+  const fetchInventory = useCallback(async (branchId: string, page = 1) => {
+    const from = (page - 1) * inventoryPageSize;
+    const to = from + inventoryPageSize - 1;
 
-      let query = supabase
-        .from("inventory")
-        .select(
-          `
+    const { data, error, count } = await supabase
+      .from("inventory")
+      .select(
+        `
           id,
           stock,
           min_stock,
           branch_id,
-          products!inner (
+          products (
             id,
             name,
             price,
@@ -128,33 +124,23 @@ export default function Inventory() {
             product_type
           )
         `,
-          { count: "exact" },
-        )
-        .eq("branch_id", branchId)
-        .order("updated_at", { ascending: false })
-        .range(from, to);
+        { count: "exact" },
+      )
+      .eq("branch_id", branchId)
+      .order("updated_at", { ascending: false })
+      .range(from, to);
 
-      if (trimmed) {
-        query = query.or(`name.ilike.%${trimmed}%,barcode.ilike.%${trimmed}%`, {
-          foreignTable: "products",
-        });
-      }
+    if (error) {
+      console.error("Supabase Error:", error.message);
+      return;
+    }
 
-      const { data, error, count } = await query;
-
-      if (error) {
-        console.error("Supabase Error:", error.message);
-        return;
-      }
-
-      setInventoryPage(page);
-      if (count !== null) {
-        setInventoryTotalCount(count);
-      }
-      setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
-    },
-    [],
-  );
+    setInventoryPage(page);
+    if (count !== null) {
+      setInventoryTotalCount(count);
+    }
+    setItems(normalizeInventoryRows((data as InventoryRow[]) ?? []));
+  }, []);
 
   const loadProductOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -469,7 +455,7 @@ export default function Inventory() {
       setActiveBranchId(branch.id);
       setActiveBranchName(branch.name);
       await Promise.all([
-        fetchInventory(branch.id, 1, ""),
+        fetchInventory(branch.id, 1),
         loadLowStockItems(branch.id),
         loadProductOptions(),
         loadRecentDeliveries(branch.id),
@@ -555,7 +541,7 @@ export default function Inventory() {
       if (inventoryError) throw inventoryError;
 
       await Promise.all([
-        fetchInventory(activeBranchId, 1, inventorySearch),
+        fetchInventory(activeBranchId, 1),
         loadLowStockItems(activeBranchId),
       ]);
       setNewItem(DEFAULT_NEW_ITEM_FORM);
@@ -640,7 +626,7 @@ export default function Inventory() {
     setLoading(false);
     alert("Variant added successfully.");
     await Promise.all([
-      fetchInventory(activeBranchId, 1, inventorySearch),
+      fetchInventory(activeBranchId, 1),
       loadLowStockItems(activeBranchId),
     ]);
   };
@@ -691,6 +677,8 @@ export default function Inventory() {
       .eq("branch_id", activeBranchId)
       .eq("product_id", deliveryForm.productId)
       .single();
+    // Note: Using maybeSingle() to handle cases where the inventory record might not exist yet.
+    //debugger;
 
     if (inventoryError || !inventoryRecord) {
       alert(inventoryError?.message || "Inventory item not found.");
@@ -761,7 +749,7 @@ export default function Inventory() {
     setLoading(false);
 
     await Promise.all([
-      fetchInventory(activeBranchId, inventoryPage, inventorySearch),
+      fetchInventory(activeBranchId, inventoryPage),
       loadLowStockItems(activeBranchId),
       loadRecentDeliveries(activeBranchId),
       loadInventoryHistory(activeBranchId),
@@ -890,7 +878,7 @@ export default function Inventory() {
     setLoading(false);
 
     await Promise.all([
-      fetchInventory(activeBranchId, inventoryPage, inventorySearch),
+      fetchInventory(activeBranchId, inventoryPage),
       loadLowStockItems(activeBranchId),
       loadInventoryHistory(activeBranchId),
       loadRecentLosses(activeBranchId),
@@ -922,7 +910,7 @@ export default function Inventory() {
     if (!activeBranchId) return;
     const nextPage = Math.min(Math.max(page, 1), totalInventoryPages);
     if (nextPage === inventoryPage) return;
-    await fetchInventory(activeBranchId, nextPage, inventorySearch);
+    await fetchInventory(activeBranchId, nextPage);
   };
 
   const handleLowStockAlertClick = (item: InventoryItem) => {
@@ -1049,62 +1037,20 @@ export default function Inventory() {
                   : "Showing the paginated inventory list for this branch."}
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-              {!showLowStockOnly && (
-                <div className="relative">
-                  <svg
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
-                    />
-                  </svg>
-                  <input
-                    type="text"
-                    value={inventorySearch}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setInventorySearch(val);
-
-                      if (inventorySearchDebounceRef.current !== null) {
-                        clearTimeout(inventorySearchDebounceRef.current);
-                      }
-
-                      inventorySearchDebounceRef.current = setTimeout(
-                        () => {
-                          if (activeBranchId) {
-                            void fetchInventory(activeBranchId, 1, val);
-                          }
-                        },
-                        300,
-                      );
-                    }}
-                    placeholder="Search name or barcode…"
-                    className="w-full sm:w-60 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLowStockOnly((current) => !current);
-                  setHighlightedItemId(null);
-                }}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition whitespace-nowrap ${
-                  showLowStockOnly
-                    ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                {showLowStockOnly ? "Show All Inventory" : "Show Low Stocks"}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowLowStockOnly((current) => !current);
+                setHighlightedItemId(null);
+              }}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                showLowStockOnly
+                  ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {showLowStockOnly ? "Show All Inventory" : "Show Low Stocks"}
+            </button>
           </div>
           <InventoryTable
             items={displayedInventoryItems}
