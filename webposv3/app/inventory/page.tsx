@@ -184,7 +184,9 @@ export default function Inventory() {
     [],
   );
 
-  const handleInventorySearch = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleInventorySearch = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
     if (!activeBranchId) return;
 
@@ -204,18 +206,27 @@ export default function Inventory() {
   };
 
   const loadProductOptions = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("products")
-      .select("id, name, barcode, product_type")
-      .eq("product_type", "product")
-      .order("name", { ascending: true });
+    const pageSize = 1000;
+    const allProducts: ProductOption[] = [];
 
-    if (error) {
-      console.error("Failed loading products:", error.message);
-      return;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, barcode, product_type")
+        .order("name", { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        console.error("Failed loading products:", error.message);
+        return;
+      }
+
+      const page = (data as ProductOption[]) ?? [];
+      allProducts.push(...page);
+      if (page.length < pageSize) break;
     }
 
-    setProductOptions((data as ProductOption[]) ?? []);
+    setProductOptions(allProducts);
   }, []);
 
   const loadLowStockItems = useCallback(async (branchId: string) => {
@@ -961,6 +972,7 @@ export default function Inventory() {
     return productOptions.filter((product) => {
       const nameMatch = product.name.toLowerCase().includes(query);
       const barcodeMatch = (product.barcode ?? "")
+        .trim()
         .toLowerCase()
         .includes(query);
       return nameMatch || barcodeMatch;
@@ -992,7 +1004,7 @@ export default function Inventory() {
     const matchedProduct = productOptions.find((product) => {
       return (
         product.name.toLowerCase().includes(query) ||
-        (product.barcode ?? "").toLowerCase() === query
+        (product.barcode ?? "").trim().toLowerCase() === query
       );
     });
     if (!matchedProduct) {
@@ -1013,7 +1025,8 @@ export default function Inventory() {
     if (!normalizedBarcode) return;
 
     const matchedProduct = productOptions.find(
-      (product) => (product.barcode ?? "").toLowerCase() === normalizedBarcode,
+      (product) =>
+        (product.barcode ?? "").trim().toLowerCase() === normalizedBarcode,
     );
 
     if (!matchedProduct) return;
@@ -1106,7 +1119,9 @@ export default function Inventory() {
                 <input
                   type="search"
                   value={inventorySearchInput}
-                  onChange={(event) => setInventorySearchInput(event.target.value)}
+                  onChange={(event) =>
+                    setInventorySearchInput(event.target.value)
+                  }
                   placeholder="Search product name or barcode..."
                   aria-label="Search inventory by product name or barcode"
                   className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 md:w-72"
@@ -1145,8 +1160,12 @@ export default function Inventory() {
           </div>
           {!showLowStockOnly && inventorySearch && (
             <p className="border-b border-slate-100 px-6 py-3 text-sm text-slate-500">
-              Search results for <span className="font-semibold text-slate-700">{inventorySearch}</span>
-              {" "}({inventoryTotalCount} {inventoryTotalCount === 1 ? "item" : "items"})
+              Search results for{" "}
+              <span className="font-semibold text-slate-700">
+                {inventorySearch}
+              </span>{" "}
+              ({inventoryTotalCount}{" "}
+              {inventoryTotalCount === 1 ? "item" : "items"})
             </p>
           )}
           <InventoryTable
